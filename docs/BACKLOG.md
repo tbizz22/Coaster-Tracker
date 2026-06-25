@@ -8,7 +8,7 @@ restarts). Roughly priority-ordered within each section. See
 
 ## 🚀 Major direction: web platform (DB + auth + mobile)
 
-**Status: Phases 0–2 done.**
+**Status: Phases 0–3 done.**
 Full phased plan: **`docs/WEB-PLATFORM-PLAN.md`**.
 
 Re-platform the local-first, single-user app into a web-accessible, multi-user,
@@ -66,22 +66,31 @@ in email + Sign out button, `AccountSettings` in `credit-tracker.jsx`) — close
 "no account/session management UI" gap below; sign-out verified live (returns to the
 `AuthGate` sign-in screen via its `onAuthStateChange` listener).
 
-**Phase 3 (deploy) — code/config ready, actual deploy is a user action:** the SPA and
-scraper service now have everything needed to deploy separately —
-`credit-tracker.jsx`'s `apiGet`/`postSSE`/scrape-heights fetch all go through a new
-`API_BASE` (`import.meta.env.VITE_SCRAPER_URL`, empty in dev so the existing Vite
-proxy still works); `server.js` got `cors` (gated by `FRONTEND_URL`) and reads
-`PORT` from the environment instead of hardcoding 3001; a `Dockerfile` (based on
-`mcr.microsoft.com/playwright` so headless Chromium for `scrape-heights.js` is
-already present) builds the scraper service; `vercel.json` configures the SPA
-build. Verified locally: `npm run build` succeeds, the dev proxy still works with
-`API_BASE` empty, and the running scraper service responds correctly with `cors`
-added. See README "Deployment" for the actual steps (Render/Railway/Fly for the
-container, Vercel/Netlify for the SPA) — creating those hosting accounts and
-connecting them is on the user, not something to automate here.
+**Phase 3 (deploy) — done, live in production:** SPA deployed to Vercel
+(`https://coaster-tracker-gray.vercel.app`), scraper service deployed to Render as a
+Docker web service (`https://coaster-tracker.onrender.com`, built from the repo's
+`Dockerfile` — Playwright's own base image, so headless Chromium for
+`scrape-heights.js` is already present). `credit-tracker.jsx`'s `apiGet`/`postSSE`/
+scrape-heights fetch all go through `API_BASE` (`import.meta.env.VITE_SCRAPER_URL`,
+empty in dev so the Vite proxy still works); `server.js` got `cors` (gated by
+`FRONTEND_URL`) and reads `PORT` from the environment instead of hardcoding 3001.
+Verified live end-to-end: the deployed bundle has the real Supabase URL and the
+Render scraper URL baked in; Render's CORS preflight correctly returns
+`access-control-allow-origin: https://coaster-tracker-gray.vercel.app` for that
+origin and nothing for an unrelated test origin (scoped, not wide-open). The repo
+is on GitHub (`tbizz22/Coaster-Tracker`) — checked the pushed commit for secrets/PII
+before confirming it was safe: no `.env`, no `data/*.json` (real family data), no
+Supabase keys or tokens anywhere in tracked files. One real bug found and fixed
+during this rollout: `VITE_SCRAPER_URL` on Vercel was initially set to a placeholder
+hostname from the setup instructions (`coaster-tracker-scraper.onrender.com`, which
+doesn't exist) instead of the real deployed one — surfaced in the browser as a CORS
+error on the preflight, but the actual cause was Render's edge returning a plain 404
+(`X-Render-Routing: no-server`) for an unregistered hostname, not a CORS
+misconfiguration. Fixed by correcting the env var to the real Render URL and
+redeploying; batch scrape confirmed working live afterward.
 
-**Not yet done:** the actual Phase 3 deploy (hosting accounts + going live), Phase 4
-(PWA), Phase 5 (sharing/native). A few smaller account-creation UX rough edges
+**Not yet done:** Phase 4 (PWA), Phase 5 (sharing/native). A few smaller
+account-creation UX rough edges
 remain — see the dedicated subsection below.
 
 **Cleanup follow-up:** `data/*.json` (riders/parks/settings/credits + the
