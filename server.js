@@ -9,11 +9,18 @@ import * as cheerio from "cheerio";
 import { scrapeParkHeights } from "./scrape-heights.js";
 
 const app = express();
-// FRONTEND_URL = the deployed SPA's origin (comma-separated for multiple).
-// Falls back to wide-open in dev, where the Vite proxy means CORS rarely
-// matters, but production should set this so only our own frontend can call in.
+// FRONTEND_URL = the deployed SPA's production origin (comma-separated for
+// multiple). Falls back to wide-open in dev, where the Vite proxy means CORS
+// rarely matters. Also allows this project's Vercel PR-preview deployments —
+// every PR gets its own throwaway "coaster-tracker-git-<branch>-*.vercel.app"
+// URL, so a fixed allowlist alone would block reviewing PRs before merge.
 const allowedOrigins = process.env.FRONTEND_URL?.split(",").map(s => s.trim());
-app.use(cors({ origin: allowedOrigins ?? true }));
+const VERCEL_PREVIEW_RE = /^https:\/\/coaster-tracker-[a-z0-9-]+\.vercel\.app$/;
+app.use(cors({
+  origin: allowedOrigins
+    ? (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin) || VERCEL_PREVIEW_RE.test(origin))
+    : true,
+}));
 app.use(express.json({ limit: "5mb" })); // batch endpoints post the full parks array
 
 // ── Coaster lookup via RCDB ────────────────────────────────────────────────
