@@ -26,7 +26,7 @@ Use these terms consistently in UI copy, code, and docs.
 | Term | Definition | Notes / banned synonyms |
 |---|---|---|
 | **Park** | A theme park. Has name, tag (airport code), region, optional badge (one-off label), optional `family` (chain/ownership group — `SF`/`CF`/`UNI`/`SW`/`IND`), and a list of coasters. | not "venue" |
-| **Coaster** | A roller coaster at a park. Has name, manufacturer/model, `min` height (inches, or `null` = unknown), `racing` flag, plus external refs (RCDB, status, scale). | "ride" is acceptable as a casual synonym; prefer "coaster" |
+| **Coaster** | A roller coaster at a park. Has name, manufacturer/model, material/style, `min` height (inches, or `null` = unknown), speed (mph), height (ft), year opened, `racing` flag, plus external refs (RCDB, status, scale). | "ride" is acceptable as a casual synonym; prefer "coaster" |
 | **Rider** | A person whose credits we track. Has name, height (inches), color. | not "user", not "kid" |
 | **Credit** | The fact that a *rider* has ridden a specific *coaster*. The unit of progress. | banned: "done", "ridden flag" in UI copy |
 | **Eligible** | A rider *meets the height requirement* for a coaster (`min != null && height >= min`). | distinct from "ridden" |
@@ -60,10 +60,15 @@ Use these terms consistently in UI copy, code, and docs.
                             filterable per-park drawers (name filter + status
                             filter: All/In progress/Unstarted/Complete; expand-all)
 ⚙ Settings
-├── 🎡 Parks            — add/edit parks & coasters (+ defunct flag, official
-│                         height-chart URL), RCDB lookup, fill-heights
+├── 🎡 Parks & Coasters — add/edit parks & coasters (+ defunct flag, official
+│                         height-chart URL), RCDB lookup, fill-heights,
+│                         fill-speeds (+height/year/manufacturer/model/
+│                         material/style), official-height scrape (per-park
+│                         + batch)
 ├── 👤 Riders           — add/edit/delete riders
-└── 🌎 Regions          — add/rename/reorder/delete regions (→ `regions` table)
+├── 🌎 Regions          — add/rename/reorder/delete regions (→ `regions` table)
+├── 💾 Backup           — export/import the whole dataset as JSON
+└── 👤 Account          — signed-in email + sign out (`AccountSettings`)
 ```
 
 All coaster tables share one sort model (click headers; default height-asc,
@@ -219,6 +224,14 @@ Supabase via `src/supabaseClient.js`; the UI never holds the source of truth.
 A small stateless Express service (`server.js`) handles only scraping
 (RCDB/Wikipedia/official-height pages), which can't run inside Supabase.
 
+**Deployed as two separate origins** (see README "Deployment"): the SPA (Vercel)
+and the scraper service (Render, as a Docker container) don't share a host in
+production, so the client calls the scraper via an absolute `API_BASE`
+(`import.meta.env.VITE_SCRAPER_URL`) rather than a relative `/api/...` path —
+empty in local dev, where the Vite proxy still handles it. `server.js` gates
+cross-origin requests with `cors`/`FRONTEND_URL` so only the deployed SPA's
+origin can call in.
+
 | Table | Shape |
 |---|---|
 | `riders` | `{id,household_id,name,height,color,needs_companion,sort}` |
@@ -255,7 +268,7 @@ household; the client only ever uses the anon key.
 | Height fill | `POST /api/fill-heights` (SSE, body `{parks}`) | stateless | streams `{coaster,height,source}` |
 | Official scrape | `POST /api/scrape-heights` (body `{park}`) | stateless | headless-browser scrape of the park's `officialUrl`; matches coasters by punctuation-stripped name + a stopword-containment fuzzy pass (`fuzzyNameMatch`), returns proposed `{min,minAccompanied}` updates with a `fuzzy`/`scrapedName` flag (client reviews & applies) |
 | Batch scrape | `POST /api/scrape-all-heights` (SSE, body `{parks}`) | stateless | runs the official scrape over every `officialUrl` park, streaming per-park results to a combined review panel |
-| RCDB speeds | `POST /api/fill-speeds` (SSE, body `{parks}`) | stateless | resolves top speed (mph) from rcdb.com for operating coasters lacking one (quick-search + park-name disambiguation) |
+| RCDB stats | `POST /api/fill-speeds` (SSE, body `{parks}`) | stateless | resolves speed (mph), height (ft), year opened, manufacturer, model, material, and style from each coaster's own rcdb.com page for operating coasters missing any of those (prefers a known `rcdbUrl`, else quick-search + park-name disambiguation); name kept despite the broadened scope |
 
 The SSE endpoints are POST, not GET — they need the caller's parks data in the
 body, which `EventSource` can't do — so the client drives them with a small
@@ -302,13 +315,16 @@ body, which `EventSource` can't do — so the client drives them with a small
 8. ~~**`badge` field overloaded for chain identity**~~ — *resolved.* Added a
    separate `family` field (`SF`/`CF`/`UNI`/`SW`/`IND`, via the `PARK_FAMILIES`
    map) populated for all 23 parks; `badge` stays available for one-off labels.
-9. ~~**Single-user, file-based persistence with no auth**~~ — *resolved (Phases
-   0–1 of the web-platform direction, see `BACKLOG.md`).* Riders/parks/coasters/
-   credits/regions moved from `data/*.json` to Supabase Postgres, gated by a
-   minimal email/password `AuthGate`, scoped per-household by RLS. `server.js`
-   trimmed to a stateless scraper service. Auth/account UX itself is rough —
-   tracked separately as its own backlog item ("Clean up the account-creation
-   experience"). Phases 2+ (deploy, PWA, household sharing) remain open.
+9. ~~**Single-user, file-based persistence with no auth, not deployed**~~ —
+   *resolved (Phases 0–3 of the web-platform direction, see `BACKLOG.md`).*
+   Riders/parks/coasters/credits/regions moved from `data/*.json` to Supabase
+   Postgres, gated by a minimal email/password `AuthGate`, scoped per-household
+   by RLS (verified live with a second account — sees 0 rows). `server.js`
+   trimmed to a stateless scraper service. The app is live in production: SPA
+   on Vercel, scraper service on Render (Docker), repo on GitHub
+   (`tbizz22/Coaster-Tracker`). A few smaller auth/account UX rough edges remain
+   — tracked separately ("Clean up the account-creation experience"). Phases 4+
+   (PWA, household sharing, native app) remain open.
 
 ---
 

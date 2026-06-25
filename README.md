@@ -9,6 +9,10 @@ Built for a family of riders of differing heights — including the
 "can ride only with an adult" case (e.g. a 39" rider) — so the app distinguishes
 *ride-alone* from *accompanied* height limits.
 
+**Live:** [coaster-tracker-gray.vercel.app](https://coaster-tracker-gray.vercel.app)
+(SPA on Vercel) · scraper service on Render at `coaster-tracker.onrender.com` ·
+source on GitHub at [`tbizz22/Coaster-Tracker`](https://github.com/tbizz22/Coaster-Tracker).
+
 ---
 
 ## Quick start
@@ -44,7 +48,7 @@ Open http://localhost:5173, sign up (creates your household), and you're in.
 |---|---|
 | **🎢 Parks** | Opens on an offline **map** of the parks (region-colored markers sized by coaster count). Click a marker — or a park in the left list — to open that park's coasters. A small colored chip shows the park's **family/chain** (`SF` Six Flags, `CF` Cedar Fair-branded, `UNI` Universal, `SW` SeaWorld/United Parks, `IND` independent) next to its airport-code tag. Tables show both the ride-alone **Min** and a dedicated **w/ adult** (accompanied) height column. The detail defaults to a neutral **Overview**; pick a rider in the inline **View** control to see their height eligibility (`✓` can ride alone, `✓*` only with an adult, `✗` too short). Click any coaster **name** to open a detail modal (toggle into edit mode to update it). "← Back to map" returns to the overview. |
 | **✓ Credits** | Mark who has ridden what. **Pivot** the left nav **By park** (all-riders × coasters grid, bulk toggles) or **By rider** (one rider's credits across every park, with **Eligible only** / **Ridden only** filters and a muted "Defunct · historical" sub-table per park). Both pivots show the alone + accompanied height columns; click a coaster name for its detail modal. The top-bar rider pills are clickable — they jump straight to that rider's By-rider view — and lead with a denominator scoped to **parks the rider has actually visited** (the all-parks total is kept alongside it). |
-| **⚙ Settings** | Manage **Parks & Coasters** (+ heights, defunct flag, official-URL, RCDB import with **delta merge** (no duplicates), height auto-fill, per-park **official-height scrape**, **batch scrape all parks**, and **fill speeds from RCDB**), **Riders** (incl. a per-rider "needs an adult for ✓*" flag), **Regions**, and **💾 Backup** (export/import the whole dataset as JSON). |
+| **⚙ Settings** | Manage **Parks & Coasters** (+ heights, defunct flag, official-URL, RCDB import with **delta merge** (no duplicates), height auto-fill, per-park **official-height scrape**, **batch scrape all parks**, and **fill speeds/height/year/manufacturer/model/material/style from RCDB**), **Riders** (incl. a per-rider "needs an adult for ✓*" flag), **Regions**, **💾 Backup** (export/import the whole dataset as JSON), and **👤 Account** (signed-in email + sign out). |
 
 Key concepts: **credit** = a rider has ridden a coaster (unit of progress);
 **eligible** = the rider meets the height limit (alone or accompanied) and the
@@ -64,7 +68,7 @@ pages — things that can't run inside Supabase).
 credit-tracker.jsx   UI: data, helpers (normalizeCoaster, mergeCoasters, CoasterModal),
                      persistence (loadHouseholdData/save* — talk to Supabase),
                      components (ParksTab [list + map/detail], CreditTracker,
-                     ManageParks/Riders/Regions, App)
+                     ManageParks/Riders/Regions/AccountSettings, App)
 src/supabaseClient.js  Supabase client singleton (anon key only)
 src/AuthGate.jsx     Email/password sign-in/sign-up screen wrapping <App/>
 server.js            Stateless scraper service: RCDB scrape/speeds + Wikipedia

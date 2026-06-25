@@ -1,7 +1,10 @@
 # Coaster Tracker → Web Platform (DB + Auth + Mobile-ready)
 
-> Status: **planned, not started.** Captured for a future effort. Decisions in the
-> Context section are settled; phases are the proposed roadmap.
+> Status: **Phases 0–3 done and live in production.** See `docs/BACKLOG.md` for
+> current status, what was actually built/verified, and bugs found along the way.
+> This doc is kept as the original plan record — phase descriptions below were
+> written before implementation and are mostly historical; Phase 4 (PWA) and
+> Phase 5 (sharing/native) remain the open roadmap.
 
 ## Context
 
@@ -67,7 +70,7 @@ React SPA (current UI)  ──auth + data──▶  Supabase
 
 ## Phases
 
-### Phase 0 — Foundations
+### Phase 0 — Foundations ✅ done
 - Create Supabase project; install Supabase CLI; enable **local dev** (`supabase start`)
   so schema/RLS are developed against a local Postgres before touching cloud.
 - Author the schema + RLS as versioned SQL migrations under `supabase/migrations/`.
@@ -75,7 +78,7 @@ React SPA (current UI)  ──auth + data──▶  Supabase
   where the service-role key lives (server only, never client).
 - Decide hosting targets (web: Vercel/Netlify; scraper: Render/Railway/Fly).
 
-### Phase 1 — Data layer migration (DB-backed, still single-household)
+### Phase 1 — Data layer migration (DB-backed, still single-household) ✅ done
 - Build the schema locally; seed one "default" household.
 - Add `src/supabaseClient.js`; **replace the persistence layer** in `credit-tracker.jsx`:
   - `apiGet`/`apiPut` + `saveRiders/saveParks/saveSettings/saveCredits` → Supabase queries.
@@ -90,7 +93,7 @@ React SPA (current UI)  ──auth + data──▶  Supabase
   remove riders/parks/settings/credits CRUD (now in Supabase). Scrapers stay stateless —
   they return proposed data and the client writes it to Supabase.
 
-### Phase 2 — Auth & multi-tenancy (households, login, security)
+### Phase 2 — Auth & multi-tenancy (households, login, security) ✅ done
 - Turn on Supabase Auth (email/password + magic-link or an OAuth provider).
 - Add an **auth gate**: a login/sign-up screen wrapping `<App/>` in `src/main.jsx`; load
   the session, redirect unauthenticated users.
@@ -101,10 +104,14 @@ React SPA (current UI)  ──auth + data──▶  Supabase
 - **Security pass:** verify RLS on every table (incl. cross-household-denied tests), confirm
   only the anon key is in the client bundle, validate session refresh + sign-out.
 
-### Phase 3 — Web deployment
-- Deploy: web SPA (Vercel/Netlify), Supabase (managed cloud), scraper service (container).
-- Production env/secrets, CORS for the scraper service, optional custom domain.
-- Basic error handling/observability (Supabase logs + a client error boundary).
+### Phase 3 — Web deployment ✅ done
+- Deployed: SPA on Vercel (`coaster-tracker-gray.vercel.app`), scraper service on
+  Render as a Docker container (`coaster-tracker.onrender.com`, built from the
+  repo's `Dockerfile`), Supabase managed cloud (already in use since Phase 0).
+- Production env vars: `VITE_SCRAPER_URL` (SPA → scraper) and `FRONTEND_URL`
+  (scraper's CORS allowlist) — see README "Deployment".
+- Not done: custom domain, client error boundary, server-side observability beyond
+  Render/Supabase's own logs.
 
 ### Phase 4 — PWA / mobile-readiness
 - **Responsive + design-system cleanup first** (this unblocks mobile) — execute the existing
