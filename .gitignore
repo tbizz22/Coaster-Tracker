@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.local
+
+# Inert pre-Supabase snapshot — contains real family data (names, heights);
+# nothing reads/writes it anymore (see docs/BACKLOG.md). Kept locally, not pushed.
+data/
+
+# Claude Code local tooling config, not part of the app
+.claude/
+
+# Supabase CLI local cache (project ref/pooler URL) — not project source
+supabase/.temp/

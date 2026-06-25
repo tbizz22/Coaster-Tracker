@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Coaster Credit Tracker</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      :root {
+        --border: #1e293b; --border2: #334155;
+        --side-w: 260px;
+        --content-max: 1160px;
+      }
+      body { background: #060c18; }
+
+      /* ── Responsive shell ──────────────────────────────────────────────
+         A page is a horizontal split (side nav + content). Below the
+         breakpoint it stacks: the nav becomes a full-width, height-capped,
+         horizontally-scrolling strip above the content. Fixes the
+         horizontal-overflow the fixed 260px nav caused on narrow screens.
+         Breakpoint is 820px so tablet-portrait (768) stacks rather than
+         keeping the cramped 260px nav. */
+      .ct-split { display: flex; flex: 1; min-height: 0; }
+      .ct-sidenav { width: var(--side-w); flex-shrink: 0; }
+      .ct-hscroll { overflow-x: auto; }
+
+      /* Cap content width on ultrawide monitors so the scrollable detail/track
+         panels don't stretch to an unreadable line length. The panel stays a
+         flex:1 scroll container; margin-inline:auto centers the capped column.
+         (The map view caps itself separately via maxWidth on its <svg>.) */
+      .ct-content { max-width: var(--content-max, 1160px); margin-inline: auto; width: 100%; }
+
+      @media (max-width: 820px) {
+        .ct-split { flex-direction: column; }
+        .ct-sidenav {
+          width: 100% !important;
+          flex-shrink: 1;
+          max-height: 40vh;
+          border-right: none !important;
+          border-bottom: 1px solid var(--border);
+        }
+        /* roomier tap targets + no zoom-on-focus for inputs on mobile */
+        .ct-sidenav button { min-height: 34px; }
+      }
+
+      /* Thin custom scrollbars so the new scroll areas don't look heavy */
+      .ct-hscroll::-webkit-scrollbar, .ct-sidenav::-webkit-scrollbar { height: 8px; width: 8px; }
+      .ct-hscroll::-webkit-scrollbar-thumb, .ct-sidenav::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 999px; }
+      .ct-hscroll::-webkit-scrollbar-track, .ct-sidenav::-webkit-scrollbar-track { background: transparent; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
