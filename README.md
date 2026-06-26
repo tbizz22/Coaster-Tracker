@@ -149,11 +149,17 @@ each other over plain HTTPS, not a proxy:
    - `VITE_SCRAPER_URL` — the scraper service's deployed URL (step 1). Leave unset
      only in local dev, where the Vite proxy handles `/api` instead.
 3. **Supabase** — no separate deploy step; the cloud project you've already been
-   using *is* production. (If you want a staging environment, that's a second
-   Supabase project + its own `.env`.)
+   using *is* production, shared by prod/previews/local dev. Test data stays
+   isolated from real data via a dedicated test account's household (RLS), not a
+   separate database — see `CONTRIBUTING.md`.
 
 There's no CI/build step that needs the scraper at SPA-build-time — the two only
 talk to each other at runtime, via `VITE_SCRAPER_URL`.
+
+Now that production is live, changes go through a branch + PR rather than
+straight to `main` — see **[`CONTRIBUTING.md`](CONTRIBUTING.md)** for the workflow
+(branching, PR previews, and the dedicated test account used to keep test data
+isolated from real family data).
 
 ---
 
