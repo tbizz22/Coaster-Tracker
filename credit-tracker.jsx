@@ -44,8 +44,41 @@ const COLOR_PALETTE = [
 // to separate origins, so VITE_SCRAPER_URL must point at the deployed one.
 const API_BASE = import.meta.env.VITE_SCRAPER_URL || "";
 
+// Render's free tier spins the scraper down after idling and takes ~30-50s to
+// boot back up on the next request — during that window requests fail with a
+// network error (connection refused) or a 502/503/504 from Render's own proxy
+// while the container starts. Those are the only failure shapes a cold boot
+// produces, so retrying on anything else (4xx, a real 500 from our own code,
+// a non-network thrown error) would just mask a genuine bug — fail fast instead.
+const COLD_START_RETRY_DELAYS_MS = [2000, 4000, 8000, 16000, 30000]; // ~60s total, covers Render's worst-case boot time
+
+function isColdStartStatus(status) {
+  return status === 502 || status === 503 || status === 504;
+}
+
+// Wraps fetch with retry-on-cold-boot. `onRetry(attempt, total)` lets callers
+// surface "scraper is waking up..." feedback instead of looking hung.
+async function fetchWithColdStartRetry(url, options, onRetry) {
+  const maxAttempts = COLD_START_RETRY_DELAYS_MS.length + 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let resp, networkError;
+    try {
+      resp = await fetch(url, options);
+    } catch (e) {
+      networkError = e;
+    }
+    const shouldRetry = (networkError || isColdStartStatus(resp?.status)) && attempt < maxAttempts;
+    if (!shouldRetry) {
+      if (networkError) throw networkError;
+      return resp;
+    }
+    onRetry?.(attempt, maxAttempts);
+    await new Promise(r => setTimeout(r, COLD_START_RETRY_DELAYS_MS[attempt - 1]));
+  }
+}
+
 async function apiGet(path) {
-  const r = await fetch(API_BASE + path);
+  const r = await fetchWithColdStartRetry(API_BASE + path);
   return r.json();
 }
 
@@ -55,7 +88,11 @@ async function apiGet(path) {
 async function postSSE(path, body, onMessage) {
   let resp;
   try {
-    resp = await fetch(API_BASE + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    resp = await fetchWithColdStartRetry(
+      API_BASE + path,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      (attempt, total) => onMessage({ type: "status", message: `Scraper service is waking up (retry ${attempt}/${total - 1})…` }),
+    );
   } catch (e) {
     onMessage({ type: "error", message: `Could not reach the scraper: ${e.message}` });
     return;
@@ -2116,11 +2153,11 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
     setScrapeLoading(true);
     setScrapeResult(null);
     try {
-      const resp = await fetch(API_BASE + "/api/scrape-heights", {
+      const resp = await fetchWithColdStartRetry(API_BASE + "/api/scrape-heights", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ park: selectedPark }),
-      });
+      }, (attempt, total) => setScrapeResult({ status: `Scraper service is waking up (retry ${attempt}/${total - 1})…` }));
       const data = await resp.json();
       if (!resp.ok) { setScrapeResult({ error: data.error || "Scrape failed." }); }
       else setScrapeResult(data);
@@ -2728,6 +2765,8 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                 <div style={{ padding:"10px 16px", borderBottom:`1px solid ${T.border}`, background:T.zebra }}>
                   {scrapeResult.error
                     ? <div style={{ fontSize:T.fsm, color:"#f87171" }}>⚠ {scrapeResult.error}</div>
+                    : scrapeResult.status
+                    ? <div style={{ fontSize:T.fsm, color:T.textLo }}>⏳ {scrapeResult.status}</div>
                     : (() => {
                         const changed = (scrapeResult.matched || []).filter(m => m.changed);
                         const fmt = v => v == null ? "—" : `${v}"`;
