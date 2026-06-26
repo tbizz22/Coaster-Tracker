@@ -3001,6 +3001,163 @@ function AccountSettings() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// PLAN MODE (prototype) — "where should we go" instead of "here's a table".
+// Reuses rideStatus()'s existing alone/accompanied/no/unknown states; a rider
+// avatar stays visible for every coaster (never hidden), just recolored:
+// full color = alone, ringed = accompanied-only (the rare, valuable case),
+// greyed = too short, outlined = unknown height.
+// ═══════════════════════════════════════════════════════════════════════════
+// Status is conveyed by shape/badge as well as color, so it still reads for
+// colorblind users or on a washed-out screen: "alone" is a plain filled
+// circle, "accompanied" gets a corner badge (amber ring + a small "A" tag),
+// "no" gets a corner badge (greyscale + a small "✕" tag), "unknown" is a
+// dashed outline.
+function RiderAvatar({ rider, status, size = 28 }) {
+  const initial = rider.name.slice(0, 1).toUpperCase();
+  const base = { width:size, height:size, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center",
+    fontSize:size*0.42, fontWeight:T.wBold, flexShrink:0, fontFamily:"inherit" };
+  const badgeBase = { position:"absolute", bottom:-2, right:-2, width:size*0.5, height:size*0.5, borderRadius:"50%",
+    display:"flex", alignItems:"center", justifyContent:"center", fontSize:size*0.32, fontWeight:T.wBold,
+    border:`1.5px solid ${T.bg ?? "#0b0b0b"}`, lineHeight:1 };
+
+  if (status === "alone") {
+    return <div title={`${rider.name} — can ride alone`} style={{ ...base, background:rider.color, color:"#0b0b0b" }}>{initial}</div>;
+  }
+  if (status === "accompanied") {
+    return (
+      <div title={`${rider.name} — only with an adult`} style={{ position:"relative", flexShrink:0 }}>
+        <div style={{ ...base, background:rider.color, color:"#0b0b0b", boxShadow:`0 0 0 2px ${ACC_AMBER}` }}>{initial}</div>
+        <div style={{ ...badgeBase, background:ACC_AMBER, color:"#0b0b0b" }}>A</div>
+      </div>
+    );
+  }
+  if (status === "no") {
+    return (
+      <div title={`${rider.name} — too short`} style={{ position:"relative", flexShrink:0 }}>
+        <div style={{ ...base, background:rider.color, color:"#0b0b0b", filter:"grayscale(1)", opacity:0.35 }}>{initial}</div>
+        <div style={{ ...badgeBase, background:"#6b7280", color:"#fff" }}>✕</div>
+      </div>
+    );
+  }
+  return <div title={`${rider.name} — height unknown`} style={{ ...base, background:"transparent", border:`1px dashed ${T.border2}`, color:T.textFaint }}>{initial}</div>;
+}
+
+// One coaster's family-fit threshold collapsed to a single number, per the
+// "lowest applicable height wins, flag if it required a companion" rule.
+function effectiveThreshold(c) {
+  const { min, minAccompanied: acc } = c;
+  if (min == null && acc == null) return null;
+  if (acc != null && (min == null || acc < min)) return { ft:acc, companion:true };
+  return { ft:min, companion:false };
+}
+
+function familyFit(park, riders) {
+  const live = liveCoasters(park);
+  let everyone = 0, someNeedAdult = 0, blocked = 0;
+  for (const c of live) {
+    const statuses = riders.map(r => rideStatus(c, r.height));
+    if (statuses.every(s => s === "alone")) everyone++;
+    else if (statuses.every(s => s === "alone" || s === "accompanied")) someNeedAdult++;
+    else blocked++;
+  }
+  return { total: live.length, everyone, someNeedAdult, blocked };
+}
+
+// How many of a park's coasters a single rider can ride alone vs. only with
+// an adult vs. not at all — the basis for the per-rider summary cards.
+function riderFit(park, rider) {
+  const live = liveCoasters(park);
+  let alone = 0, accompanied = 0, no = 0;
+  for (const c of live) {
+    const s = rideStatus(c, rider.height);
+    if (s === "alone") alone++;
+    else if (s === "accompanied") accompanied++;
+    else if (s === "no") no++;
+  }
+  return { total: live.length, alone, accompanied, no };
+}
+
+function PlanMode({ parks, riders }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = parks.find(p => p.id === selectedId) || null;
+
+  if (selected) {
+    const live = liveCoasters(selected);
+    return (
+      <div style={{ padding:T.s7, maxWidth:720 }}>
+        <button onClick={() => setSelectedId(null)} style={{ background:"none", border:"none", color:T.textLo, cursor:"pointer", fontSize:T.fsm, marginBottom:T.s4, fontFamily:"inherit", padding:0 }}>← Back to parks</button>
+        <div style={{ fontSize:T.fxl, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s5 }}>{selected.name}</div>
+
+        <div style={{ display:"flex", gap:T.s3, marginBottom:T.s6, flexWrap:"wrap" }}>
+          {riders.map(r => {
+            const rf = riderFit(selected, r);
+            return (
+              <div key={r.id} style={{ display:"flex", alignItems:"center", gap:T.s3, background:T.panel2, border:`1px solid ${T.border}`, borderRadius:T.r3, padding:`${T.s3} ${T.s4}` }}>
+                <RiderAvatar rider={r} status="alone" size={30}/>
+                <div>
+                  <div style={{ fontSize:T.fsm, fontWeight:T.wBold, color:T.ink }}>{r.name}</div>
+                  <div style={{ fontSize:T.fxs, color:T.textLo }}>
+                    {rf.alone}/{rf.total} alone
+                    {rf.accompanied > 0 && <span style={{ color:ACC_AMBER }}> · +{rf.accompanied} w/ adult</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:T.s4 }}>
+          {live.map(c => {
+            const thr = effectiveThreshold(c);
+            return (
+              <div key={c.name} style={{ borderBottom:`1px solid ${T.border}`, paddingBottom:T.s3 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:T.s2 }}>
+                  <span style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>{c.name}</span>
+                  <span style={{ fontSize:T.fxs, color: thr?.companion ? ACC_AMBER : T.textFaint }}>
+                    {thr == null ? "height unknown" : thr.companion ? `${c.min ?? "—"}" · ${thr.ft}" w/ companion` : `${thr.ft}"`}
+                  </span>
+                </div>
+                <div style={{ display:"flex", gap:T.s2 }}>
+                  {riders.map(r => <RiderAvatar key={r.id} rider={r} status={rideStatus(c, r.height)}/>)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding:T.s7, maxWidth:560 }}>
+      <div style={{ fontSize:T.fxl, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s2 }}>Where should we go?</div>
+      <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s6 }}>Scored for {riders.map(r=>r.name).join(", ")}.</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:T.s3 }}>
+        {parks.map(p => {
+          const fit = familyFit(p, riders);
+          const ratio = fit.total ? fit.everyone / fit.total : 0;
+          const tone = fit.total === 0 ? { bg:T.panel2, fg:T.textFaint } : ratio >= 0.6 ? { bg:"#4ade8022", fg:"#4ade80" } : ratio >= 0.25 ? { bg:`${ACC_AMBER}22`, fg:ACC_AMBER } : { bg:"#f8717122", fg:"#f87171" };
+          return (
+            <button key={p.id} onClick={() => setSelectedId(p.id)} style={{
+              display:"flex", alignItems:"center", gap:T.s4, padding:T.s4, borderRadius:T.r3,
+              border:`1px solid ${T.border}`, background:T.panel, cursor:"pointer", textAlign:"left", fontFamily:"inherit",
+            }}>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>{p.name}</div>
+                <div style={{ fontSize:T.fxs, color:T.textFaint }}>{REGIONS[p.region] || p.region}</div>
+              </div>
+              <span style={{ background:tone.bg, color:tone.fg, fontSize:T.fxs, fontWeight:T.wBold, padding:"3px 10px", borderRadius:T.pill, whiteSpace:"nowrap" }}>
+                {fit.everyone}/{fit.total} fit all
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // APP ROOT
 // ═══════════════════════════════════════════════════════════════════════════
 export default function App() {
@@ -3298,6 +3455,7 @@ export default function App() {
   // `region: true` = the top-bar region filter applies to this view (it filters
   // the parks shown). Per-view config instead of an ad-hoc allow-list.
   const NAV = [
+    { id:"plan",     label:"🧭 Plan (prototype)", region:false },
     { id:"parks",    label:"🎢 Parks",    region:true  },
     { id:"credits",  label:"✓ Credits",   region:true  },
     { id:"settings", label:"⚙ Settings",  region:false },
@@ -3375,7 +3533,10 @@ export default function App() {
       )}
 
       {/* CONTENT */}
-      <div style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}>
+      <div style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0, overflowY:"auto" }}>
+        {/* Plan mode — prototype, additive alongside the existing tabs */}
+        {view==="plan" && <PlanMode parks={parks} riders={riders}/>}
+
         {/* Parks tab — unified left nav with Explorer / Height sub-views */}
         {view==="parks" && <ParksTab visibleParks={visibleParks} allParks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden} onSelectAll={selectAll} onClearAll={clearAll} onOpenCoaster={openCoaster}/>}
 
