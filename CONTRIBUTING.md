@@ -10,13 +10,17 @@ go through a branch + PR, not straight to `main`.
 - Work happens on a short-lived branch off `main`, named by intent:
   `feat/...`, `fix/...`, `docs/...`, `chore/...`.
 - Open a PR into `main` when ready for review (`gh pr create`). Merge (don't force-push
-  over `main`) once it looks right.
+  over `main`) once it looks right, then delete the branch (`gh pr merge --delete-branch`).
+- **Exception — trivial, no-code-risk changes go straight to `main`.** Things like
+  `.gitignore` entries, typo fixes in docs/comments, or other changes with nothing to
+  meaningfully review don't need a branch+PR detour. Use judgment: anything touching
+  app code, runtime config, or CI/deploy setup still goes through a PR.
 
 ## Reviewing before merge — Vercel preview deployments
 
 Every PR gets its own **Vercel preview URL** automatically (Vercel's GitHub
 integration creates one per push, no setup needed) — something like
-`coaster-tracker-git-<branch>-tbizz22.vercel.app`. `server.js`'s CORS allowlist
+`coaster-tracker-git-<branch>-tyler25.vercel.app`. `server.js`'s CORS allowlist
 recognizes any `coaster-tracker-*.vercel.app` origin in addition to the
 production `FRONTEND_URL`, so a preview can call the live scraper service.
 
