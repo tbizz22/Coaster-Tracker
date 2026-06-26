@@ -12,3 +12,6 @@ data/
 
 # Supabase CLI local cache (project ref/pooler URL) — not project source
 supabase/.temp/
+
+# Personal dashboard links/notes — not project source, not for the repo
+docs/local/
