@@ -217,6 +217,33 @@ lens), the Credits By-park grid, and the By-rider drawers (which gained a column
 header and now show alone + accompanied as two explicit columns instead of the
 single `X"*` badge). The per-rider eligibility tick stays as the eligibility signal.
 
+## Desktop park-detail table: redesign (user feedback)
+
+User feedback on the current Parks ▸ detail table (the per-rider stat-chip row +
+data table), captured for the desktop "hardened, more data/insights" pass —
+**not yet started, this is notes for when that work begins**:
+
+- **Stat chips are inconsistent and mostly not useful.** The row of summary chips
+  (coaster counts by min-height band, unknown count, "rider can ride" count) uses
+  different colors for what's conceptually the same kind of data, which reads as
+  arbitrary rather than meaningful. Of the whole row, only the **"[Rider] can
+  ride: N"** chip was called out as genuinely useful — the height-band breakdown
+  chips should be redesigned or dropped rather than carried forward as-is.
+- **Type column is too verbose, and should split + abbreviate.** The combined
+  "Manufacturer Model" free-text column reads as one long string. Wants its own
+  dedicated column (separate from name), and manufacturer names should always use
+  common industry abbreviations (B&M, RMC, GCI, PTC, etc.) instead of full names.
+- **Add a ride photo/thumbnail**, ideally without self-hosting images. Likely
+  approach: extend the existing Wikipedia lookup (already used for height
+  fill-ins) to also pull the infobox image URL and store just the URL — Wikimedia
+  Commons images are freely licensed and safe to hotlink with attribution. Falls
+  back to a placeholder when a coaster has no Wikipedia image. (RCDB also has
+  photos, but scraping/hotlinking those is more ToS-questionable than Wikipedia's
+  API.)
+- **Legend row should be a hover/tooltip on desktop, not always-on screen.** The
+  "✓ Can ride · ✓\* With an adult · ✗ Too short · ? Height unknown" key currently
+  sits permanently on the page; move it behind a small "ⓘ" affordance instead.
+
 ## Clean up the minimum-rider-height experience
 
 **Done.** Vocabulary + legend (single `RIDE_STATUS` source of truth), the
