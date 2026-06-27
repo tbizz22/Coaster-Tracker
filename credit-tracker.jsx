@@ -751,6 +751,28 @@ function modalDraftFrom(c) {
   };
 }
 
+// Hoisted to module scope (not defined inside CoasterModal) — a component
+// defined inline in a render body gets a new function identity every render,
+// which makes React treat it as a different component type and remount its
+// subtree. That was silently stealing focus back to the autoFocus Name field
+// on every keystroke (any field's onChange re-rendered the modal, which
+// remounted Row/Field, which remounted their input children).
+function Row({ label, children }) {
+  return (
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:T.s4, padding:`${T.s2}px 0`, borderBottom:`1px solid ${T.hair}` }}>
+      <span style={{ fontSize:T.fsm, color:T.textLo }}>{label}</span>
+      <span style={{ fontSize:T.fbase, color:T.text, textAlign:"right", minWidth:0 }}>{children}</span>
+    </div>
+  );
+}
+function Field({ label, children }) {
+  return (
+    <label style={{ display:"flex", flexDirection:"column", gap:T.s1 }}>
+      <span style={fieldLabelCss}>{label}</span>{children}
+    </label>
+  );
+}
+
 function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState(() => modalDraftFrom(coaster));
@@ -792,17 +814,6 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
   const numInput = (k, ph, extra={}) => (
     <input type="number" value={draft[k]} onChange={e=>st(k, e.target.value)} placeholder={ph}
       style={{ width:"100%", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none", ...extra }}/>
-  );
-  const Row = ({ label, children }) => (
-    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:T.s4, padding:`${T.s2}px 0`, borderBottom:`1px solid ${T.hair}` }}>
-      <span style={{ fontSize:T.fsm, color:T.textLo }}>{label}</span>
-      <span style={{ fontSize:T.fbase, color:T.text, textAlign:"right", minWidth:0 }}>{children}</span>
-    </div>
-  );
-  const Field = ({ label, children }) => (
-    <label style={{ display:"flex", flexDirection:"column", gap:T.s1 }}>
-      <span style={fieldLabelCss}>{label}</span>{children}
-    </label>
   );
 
   const prov = [
