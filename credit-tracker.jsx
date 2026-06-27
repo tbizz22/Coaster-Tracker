@@ -740,7 +740,7 @@ function ColorDot({ color, size=10 }) {
 // ═══════════════════════════════════════════════════════════════════════════
 function modalDraftFrom(c) {
   return {
-    name: c.name ?? "", manufacturer: c.manufacturer ?? "", model: c.model ?? "",
+    id: c.id, name: c.name ?? "", manufacturer: c.manufacturer ?? "", model: c.model ?? "",
     material: c.material ?? "", style: c.style ?? "",
     min: c.min == null ? "" : String(c.min),
     minAccompanied: c.minAccompanied == null ? "" : String(c.minAccompanied),
@@ -801,7 +801,7 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
     const idx = park.coasters.findIndex(c => c.name === coaster.name);
     if (idx === -1) { setErr("Couldn't locate this coaster to save."); return; }
     onSave(park.id, idx, {
-      name: draft.name.trim(), manufacturer: draft.manufacturer.trim(), model: draft.model.trim(),
+      id: draft.id, name: draft.name.trim(), manufacturer: draft.manufacturer.trim(), model: draft.model.trim(),
       material: draft.material.trim(), style: draft.style.trim(),
       min: v.h, minAccompanied: draft.minAccompanied, speedMph: draft.speed,
       heightFt: draft.heightFt, yearOpened: draft.yearOpened,
@@ -2301,7 +2301,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
     if (v.err) { setEditCoaster(ec => ({ ...ec, err:v.err })); return; }
     // In-place update (migrates credits if the name changes) — no delete+re-add.
     const { manufacturer, model } = splitManufacturerModel(d.typeText);
-    onUpdateCoaster(selectedPark.id, editCoaster.idx, { name:d.name, manufacturer, model, min:v.h, minAccompanied:d.minAccompanied, speedMph:d.speed, racing:d.racing, defunct:d.defunct });
+    onUpdateCoaster(selectedPark.id, editCoaster.idx, { id:d.id, name:d.name, manufacturer, model, min:v.h, minAccompanied:d.minAccompanied, speedMph:d.speed, racing:d.racing, defunct:d.defunct });
     setEditCoaster(null);
   }
 
@@ -2858,7 +2858,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                     onMouseEnter={e=>e.currentTarget.style.background="#1e293b22"}
                     onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"transparent":T.zebra}
                   >
-                    <button onClick={()=>setEditCoaster({idx:i,draft:{name:c.name,typeText:coasterType(c),min:c.min==null?"":String(c.min),minAccompanied:c.minAccompanied==null?"":String(c.minAccompanied),speed:c.speedMph==null?"":String(c.speedMph),racing:!!c.racing,defunct:!!c.defunct}})} style={{ background:"none", border:"none", padding:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:5 }}>
+                    <button onClick={()=>setEditCoaster({idx:i,draft:{id:c.id,name:c.name,typeText:coasterType(c),min:c.min==null?"":String(c.min),minAccompanied:c.minAccompanied==null?"":String(c.minAccompanied),speed:c.speedMph==null?"":String(c.speedMph),racing:!!c.racing,defunct:!!c.defunct}})} style={{ background:"none", border:"none", padding:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:5 }}>
                       <span style={{ fontSize:T.fbase, fontWeight:T.wSemi, color: c.defunct?T.textMid:T.text, textDecoration: c.defunct?"line-through":"none" }}>{c.name}</span>
                       {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px" }}>⇄</span>}
                       {c.defunct && <DefunctBadge/>}
