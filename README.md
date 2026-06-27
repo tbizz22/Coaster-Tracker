@@ -46,6 +46,8 @@ Open http://localhost:5173, sign up (creates your household), and you're in.
 
 | Tab | Purpose |
 |---|---|
+| **🧭 Plan** *(mobile prototype)* | A mobile-first "where should we go" view: pick a park, see every rider's avatar on every coaster (greyed when too short, amber-badged "A" when accompanied-only), with per-rider summary cards instead of a raw table. Desktop keeps the dense Parks tab; Plan is an app-style alternative aimed at small screens. Has an inline **✎ Edit park** entry point (opens the same park/coaster editor as Settings, scoped to one park). |
+| **📝 Log** *(mobile prototype)* | The post-visit counterpart to Plan — same park/avatar view, but tapping a rider's avatar toggles that credit. Writes through the same `ridden`/`toggleRidden` persistence as the Credits tab. |
 | **🎢 Parks** | Opens on an offline **map** of the parks (region-colored markers sized by coaster count). Click a marker — or a park in the left list — to open that park's coasters. A small colored chip shows the park's **family/chain** (`SF` Six Flags, `CF` Cedar Fair-branded, `UNI` Universal, `SW` SeaWorld/United Parks, `IND` independent) next to its airport-code tag. Tables show both the ride-alone **Min** and a dedicated **w/ adult** (accompanied) height column. The detail defaults to a neutral **Overview**; pick a rider in the inline **View** control to see their height eligibility (`✓` can ride alone, `✓*` only with an adult, `✗` too short). Click any coaster **name** to open a detail modal (toggle into edit mode to update it). "← Back to map" returns to the overview. |
 | **✓ Credits** | Mark who has ridden what. **Pivot** the left nav **By park** (all-riders × coasters grid, bulk toggles) or **By rider** (one rider's credits across every park, with **Eligible only** / **Ridden only** filters and a muted "Defunct · historical" sub-table per park). Both pivots show the alone + accompanied height columns; click a coaster name for its detail modal. The top-bar rider pills are clickable — they jump straight to that rider's By-rider view — and lead with a denominator scoped to **parks the rider has actually visited** (the all-parks total is kept alongside it). |
 | **⚙ Settings** | Manage **Parks & Coasters** (+ heights, defunct flag, official-URL, RCDB import with **delta merge** (no duplicates), height auto-fill, per-park **official-height scrape**, **batch scrape all parks**, and **fill speeds/height/year/manufacturer/model/material/style from RCDB**), **Riders** (incl. a per-rider "needs an adult for ✓*" flag), **Regions**, **💾 Backup** (export/import the whole dataset as JSON), and **👤 Account** (signed-in email + sign out). |
@@ -196,3 +198,10 @@ isolated from real family data).
   (A leading `"The "` is still a meaningful word, not punctuation, so a first-time
   name like "Flying Cobras" vs "The Flying Cobras" can still differ until one import
   stamps the shared rcdbId — see backlog.)
+- **Any coaster-edit save payload must carry the coaster's `id`.** `normalizeCoaster()`
+  mints a brand-new id when `id` is missing (`id: raw.id || uid()`) — and since
+  `credits.coaster_id` is a foreign key, replacing a coaster's id orphans-then-cascade-
+  deletes every credit against it. This actually shipped as a bug (every edit form
+  omitted `id`, silently wiping credits on every edit) — fixed by passing `id` through
+  in `modalDraftFrom` and both edit forms' save payloads. Any *new* edit path must do
+  the same.

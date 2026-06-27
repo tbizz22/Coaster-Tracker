@@ -89,9 +89,23 @@ error on the preflight, but the actual cause was Render's edge returning a plain
 misconfiguration. Fixed by correcting the env var to the real Render URL and
 redeploying; batch scrape confirmed working live afterward.
 
-**Not yet done:** Phase 4 (PWA), Phase 5 (sharing/native). A few smaller
-account-creation UX rough edges
-remain — see the dedicated subsection below.
+**Phase 4a (mobile-style UI redesign) — done, live in production.** Ahead of
+PWA installability, the app gained a purpose-built mobile experience (desktop
+stays as the dense, data-rich layout): a new **Plan mode** (per-park "where
+should we go" view — every rider's avatar always shown, greyed when too short,
+amber "A"-badged when accompanied-only, collapsed to a single effective height
+threshold instead of separate min/accompanied numbers) and **Log mode** (the
+same view, but tapping a rider's avatar toggles that credit — the post-visit
+counterpart to Plan). Below 640px the top tab strip becomes a fixed LogRide-
+style bottom tab bar, the always-visible rider pills collapse into a tap-to-
+open popover, and Settings sub-nav/region filter scroll horizontally instead of
+wrapping. Park/coaster editing is now reachable inline from Plan mode ("✎ Edit
+park", scoped to just that park via `ManageParks`'s new `lockToParkId` prop) —
+Settings ▸ Parks & Coasters is hidden on mobile (desktop keeps it as-is).
+
+**Not yet done:** Phase 4b (PWA manifest/installability), Phase 5
+(sharing/native). A few smaller account-creation UX rough edges remain — see
+the dedicated subsection below.
 
 **Cleanup follow-up:** `data/*.json` (riders/parks/settings/credits + the
 `.backup-*` files) are now inert — nothing reads or writes them anymore. Left in
@@ -325,6 +339,29 @@ does **not** change any counts.
 ---
 
 ## Done (this build) — for reference
+
+**⚠️ Critical bug fixed: editing a coaster silently deleted its credits.**
+Neither coaster-edit form (`CoasterModal`'s "Edit details" dialog, nor the
+inline editor in Settings ▸ Parks & Coasters) passed the coaster's existing
+`id` through in the save payload, so `normalizeCoaster()` minted a *new* id on
+every single edit (`id: raw.id || uid()`). `saveParks()` then deleted the
+old-id row (no longer present in the in-memory list), which cascaded and wiped
+every credit tied to that coaster's `coaster_id` foreign key — for every
+rider, permanently. Affected **every** coaster edit (any field, not just
+height), at any park, since credits moved to the FK model. Fixed by carrying
+`id` through `modalDraftFrom` and both save payloads. **Any credits lost to
+this bug before the fix landed are not recoverable** — the cascade delete was
+real; re-check recently-edited coasters' credits by hand.
+
+**Bug fixed: focus jumping to the Name field while editing coaster details.**
+`Row`/`Field` were defined as inline component functions inside
+`CoasterModal`'s render body, so they got a new function identity every
+re-render — React treated that as a different component type and remounted
+the whole form on every keystroke, and the Name input's `autoFocus` stole
+focus back each time. Fixed by hoisting `Row`/`Field` to module scope.
+
+**Favicon** changed to the 🎢 emoji (inline SVG data URI in `index.html`, no
+binary asset needed).
 
 **Coaster stats expanded: `heightFt`, `yearOpened`, plus real manufacturer/
 model/material/style — re-scraped live for all 254 coasters.** Extends the

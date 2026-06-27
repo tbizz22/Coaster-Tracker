@@ -42,6 +42,14 @@ Use these terms consistently in UI copy, code, and docs.
 
 ## 3. Current state (as-built sitemap)
 
+**Mobile note:** below 640px, the sitemap below is joined by two additional
+app-style tabs — **🧭 Plan** (per-park family-fit view; an inline "✎ Edit park"
+opens the Parks & Coasters editor scoped to one park) and **📝 Log** (same view,
+tap-to-credit) — and the top nav collapses to a fixed bottom tab bar. These are
+additive prototypes aimed at the mobile JTBD split (plan a trip / log a visit),
+not yet a replacement for the desktop sitemap below, which is unchanged. See
+`docs/BACKLOG.md` ("Phase 4a") for details.
+
 ```
 🎢 Parks                — park list (left) + a display area that shows the
                           offline SVG Map by default and swaps to a park detail

@@ -114,6 +114,9 @@ React SPA (current UI)  ──auth + data──▶  Supabase
   Render/Supabase's own logs.
 
 ### Phase 4 — PWA / mobile-readiness
+- **Phase 4a (mobile-style UI redesign) ✅ done** — see `docs/BACKLOG.md` for what
+  shipped (Plan/Log modes, bottom tab nav, inline park editing). Phase 4b (PWA
+  manifest/installability, below) is still open.
 - **Responsive + design-system cleanup first** (this unblocks mobile) — execute the existing
   backlog item "Visual design system & responsive breakpoints" (`docs/BACKLOG.md`): tokens,
   breakpoints mobile→ultrawide, collapse the 260px left navs on narrow widths, wide-table
