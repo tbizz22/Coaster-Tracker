@@ -43,6 +43,32 @@
         .ct-sidenav button { min-height: 34px; }
       }
 
+      /* ── App shell: top bar + nav ───────────────────────────────────────
+         Desktop keeps the dense top tab strip. Below 640px the app switches
+         to a LogRide-style fixed bottom tab bar instead, and the top bar
+         trims down to just the title + rider chips (the parks/credits
+         count text is redundant with what each tab already shows). */
+      .ct-nav-bottom { display: none; }
+      .ct-riders-trigger { display: none; }
+      @media (max-width: 640px) {
+        /* !important needed — these elements also carry an inline `display`/
+           padding style from React, which otherwise wins over the stylesheet. */
+        .ct-nav-top { display: none !important; }
+        .ct-topbar-meta { display: none !important; }
+        .ct-nav-bottom {
+          display: flex !important;
+          position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+          background: #0f172a; border-top: 1px solid var(--border);
+          padding-bottom: env(safe-area-inset-bottom, 0);
+        }
+        .ct-content-area { padding-bottom: 60px !important; }
+        /* Rider pills always taking up header space crowds a small screen —
+           collapse them into a tap-to-open popover instead (see ridersOpen
+           state in App). */
+        .ct-rider-pills { display: none !important; }
+        .ct-riders-trigger { display: flex !important; }
+      }
+
       /* Thin custom scrollbars so the new scroll areas don't look heavy */
       .ct-hscroll::-webkit-scrollbar, .ct-sidenav::-webkit-scrollbar { height: 8px; width: 8px; }
       .ct-hscroll::-webkit-scrollbar-thumb, .ct-sidenav::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 999px; }

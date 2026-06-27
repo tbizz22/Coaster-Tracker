@@ -3162,6 +3162,7 @@ function PlanMode({ parks, riders }) {
 // ═══════════════════════════════════════════════════════════════════════════
 export default function App() {
   const [view,         setView]         = useState("parks");
+  const [ridersOpen,   setRidersOpen]   = useState(false); // mobile-only rider pills popover
   const [settingsTab,  setSettingsTab]  = useState("parks");     // parks | riders | regions
   const [region, setRegion] = useState("ALL");
   const [riders, setRiders] = useState(null);
@@ -3455,10 +3456,10 @@ export default function App() {
   // `region: true` = the top-bar region filter applies to this view (it filters
   // the parks shown). Per-view config instead of an ad-hoc allow-list.
   const NAV = [
-    { id:"plan",     label:"🧭 Plan (prototype)", region:false },
-    { id:"parks",    label:"🎢 Parks",    region:true  },
-    { id:"credits",  label:"✓ Credits",   region:true  },
-    { id:"settings", label:"⚙ Settings",  region:false },
+    { id:"plan",     icon:"🧭", label:"Plan",     title:"Plan (prototype)", region:false },
+    { id:"parks",    icon:"🎢", label:"Parks",    region:true  },
+    { id:"credits",  icon:"✓",  label:"Credits",  region:true  },
+    { id:"settings", icon:"⚙",  label:"Settings", region:false },
   ];
 
   const SETTINGS_SUB = [
@@ -3474,43 +3475,71 @@ export default function App() {
   return (
     <div style={{ minHeight:"100vh", background:T.bg, color:T.text, fontFamily:"'DM Sans','Segoe UI',sans-serif", display:"flex", flexDirection:"column" }}>
 
-      {/* TOP BAR */}
-      <div style={{ background:"linear-gradient(135deg,#0f172a 0%,#1a1040 100%)", borderBottom:`1px solid ${T.border}`, padding:`${T.s5}px ${T.s7}px` }}>
+      {/* TOP BAR — full on desktop; trimmed down on mobile (nav moves to a
+          bottom tab bar below, see .ct-nav-top/.ct-nav-bottom in index.html).
+          The rider pills also collapse into a tap-to-open popover on mobile
+          (.ct-rider-pills/.ct-riders-trigger) instead of always taking up
+          header space. */}
+      <div style={{ position:"relative", background:"linear-gradient(135deg,#0f172a 0%,#1a1040 100%)", borderBottom:`1px solid ${T.border}`, padding:`${T.s5}px ${T.s7}px` }}>
         <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap", justifyContent:"space-between" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>
-            <span style={{ fontSize:T.fxl, fontWeight:T.wHeavy, letterSpacing:"-0.02em", color:T.ink }}>🎢 Coaster Tracker</span>
-            <span style={{ fontSize:T.fxs, color:T.textFaint }}>{parks.length} parks · {totalCoasters} credits</span>
-            {grandTotals.map(r => (
-              <button key={r.id} onClick={() => jumpToRiderCredits(r.id)} title={`${r.visitedCredits}/${r.visitedRideable} eligible at parks visited · ${r.credits}/${r.rideable} across all parks — view ${r.name}'s credits`} style={{ display:"inline-flex", alignItems:"center", gap:T.s2, background:`${r.color}15`, border:`1px solid ${r.color}44`, borderRadius:T.pill, padding:"2px 9px", fontSize:T.fsm, fontWeight:T.wBold, color:r.color, cursor:"pointer", fontFamily:"inherit" }}>
-                <ColorDot color={r.color} size={7}/>
-                {r.name} <span style={{ fontWeight:400, color:r.color+"99" }}>{r.visitedCredits}/{r.visitedRideable}</span>
-              </button>
-            ))}
+          <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap", minWidth:0 }}>
+            <span style={{ fontSize:T.fxl, fontWeight:T.wHeavy, letterSpacing:"-0.02em", color:T.ink, flexShrink:0 }}>🎢 Coaster Tracker</span>
+            <span className="ct-topbar-meta" style={{ fontSize:T.fxs, color:T.textFaint, flexShrink:0 }}>{parks.length} parks · {totalCoasters} credits</span>
+            <div className="ct-rider-pills" style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>
+              {grandTotals.map(r => (
+                <button key={r.id} onClick={() => jumpToRiderCredits(r.id)} title={`${r.visitedCredits}/${r.visitedRideable} eligible at parks visited · ${r.credits}/${r.rideable} across all parks — view ${r.name}'s credits`} style={{ display:"inline-flex", alignItems:"center", gap:T.s2, background:`${r.color}15`, border:`1px solid ${r.color}44`, borderRadius:T.pill, padding:"2px 9px", fontSize:T.fsm, fontWeight:T.wBold, color:r.color, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>
+                  <ColorDot color={r.color} size={7}/>
+                  {r.name} <span style={{ fontWeight:400, color:r.color+"99" }}>{r.visitedCredits}/{r.visitedRideable}</span>
+                </button>
+              ))}
+            </div>
+            <button className="ct-riders-trigger" onClick={() => setRidersOpen(o => !o)} style={{ alignItems:"center", gap:T.s2, background:T.panel2, border:`1px solid ${T.border}`, borderRadius:T.pill, padding:"3px 10px", color:T.textLo, fontFamily:"inherit", fontSize:T.fxs, cursor:"pointer" }}>
+              <div style={{ display:"flex" }}>
+                {grandTotals.map((r, i) => <span key={r.id} style={{ width:14, height:14, borderRadius:"50%", background:r.color, border:"1.5px solid #0f172a", marginLeft: i===0?0:-5 }}/>)}
+              </div>
+              Riders {ridersOpen ? "▴" : "▾"}
+            </button>
           </div>
-          <div style={{ display:"flex", gap:T.s1, background:T.panel2, borderRadius:T.r4, padding:T.s1, border:`1px solid ${T.border}` }}>
+          <div className="ct-nav-top" style={{ display:"flex", gap:T.s1, background:T.panel2, borderRadius:T.r4, padding:T.s1, border:`1px solid ${T.border}` }}>
             {NAV.map(m => (
-              <button key={m.id} onClick={() => setView(m.id)} style={{
+              <button key={m.id} title={m.title} onClick={() => setView(m.id)} style={{
                 padding:`${T.s2}px ${T.s6}px`, borderRadius:T.r3, fontFamily:"inherit", fontSize:T.fbase, fontWeight: view===m.id?T.wBold:400,
                 border: view===m.id?`1px solid ${T.border2}`:"1px solid transparent",
                 background: view===m.id?T.border:"transparent",
                 color: view===m.id?T.ink:T.textLo,
-                cursor:"pointer", transition:"all 0.15s",
-              }}>{m.label}</button>
+                cursor:"pointer", transition:"all 0.15s", whiteSpace:"nowrap",
+              }}>{m.icon} {m.label}</button>
             ))}
           </div>
         </div>
+
+        {/* Rider pills popover — mobile only; the trigger that opens it is
+            hidden on desktop via CSS, so this can only be true there. */}
+        {ridersOpen && (
+          <>
+            <div onClick={() => setRidersOpen(false)} style={{ position:"fixed", inset:0, zIndex:29 }}/>
+            <div style={{ position:"absolute", top:"100%", left:T.s5, right:T.s5, marginTop:T.s2, zIndex:30, background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r3, padding:T.s3, display:"flex", flexDirection:"column", gap:T.s2, boxShadow:"0 8px 24px rgba(0,0,0,0.5)" }}>
+              {grandTotals.map(r => (
+                <button key={r.id} onClick={() => { jumpToRiderCredits(r.id); setRidersOpen(false); }} style={{ display:"flex", alignItems:"center", gap:T.s2, background:`${r.color}15`, border:`1px solid ${r.color}44`, borderRadius:T.r2, padding:"6px 10px", fontSize:T.fsm, fontWeight:T.wBold, color:r.color, cursor:"pointer", fontFamily:"inherit", width:"100%", textAlign:"left" }}>
+                  <ColorDot color={r.color} size={8}/>
+                  {r.name} <span style={{ fontWeight:400, color:r.color+"99", marginLeft:"auto" }}>{r.visitedCredits}/{r.visitedRideable}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* SETTINGS SUB-NAV */}
       {view === "settings" && (
-        <div style={{ background:T.panel, borderBottom:`1px solid ${T.border}`, padding:`0 ${T.s7}px`, display:"flex", gap:2 }}>
+        <div className="ct-hscroll" style={{ background:T.panel, borderBottom:`1px solid ${T.border}`, padding:`0 ${T.s7}px`, display:"flex", gap:2, flexWrap:"nowrap" }}>
           {SETTINGS_SUB.map(s => (
             <button key={s.id} onClick={() => setSettingsTab(s.id)} style={{
               padding:`${T.s3}px ${T.s6}px`, background:"none", border:"none",
               borderBottom: settingsTab===s.id ? `2px solid ${T.accent}` : "2px solid transparent",
               color: settingsTab===s.id ? T.ink : T.textLo,
               cursor:"pointer", fontSize:T.fbase, fontWeight: settingsTab===s.id ? T.wBold : 400,
-              fontFamily:"inherit", transition:"all 0.15s",
+              fontFamily:"inherit", transition:"all 0.15s", whiteSpace:"nowrap", flexShrink:0,
             }}>{s.label}</button>
           ))}
         </div>
@@ -3518,22 +3547,22 @@ export default function App() {
 
       {/* REGION FILTER */}
       {showRegion && (
-        <div style={{ background:T.panel, borderBottom:`1px solid ${T.border}`, padding:`${T.s2}px ${T.s7}px`, display:"flex", gap:T.s2, alignItems:"center", flexWrap:"wrap" }}>
-          <span style={{ fontSize:T.fxs, color:T.textGhost }}>Region:</span>
+        <div className="ct-hscroll" style={{ background:T.panel, borderBottom:`1px solid ${T.border}`, padding:`${T.s2}px ${T.s7}px`, display:"flex", gap:T.s2, alignItems:"center", flexWrap:"nowrap" }}>
+          <span style={{ fontSize:T.fxs, color:T.textGhost, flexShrink:0 }}>Region:</span>
           {["ALL", ...Object.keys(REGIONS)].map(r => (
             <button key={r} onClick={() => setRegion(r)} style={{
-              padding:"2px 9px", borderRadius:T.pill,
+              padding:"2px 9px", borderRadius:T.pill, flexShrink:0,
               border: region===r?`1px solid ${T.accent}`:`1px solid ${T.border}`,
               background: region===r?"#38bdf822":"transparent",
               color: region===r?T.accent:T.textFaint,
-              cursor:"pointer", fontSize:T.fxs, fontFamily:"inherit", transition:"all 0.12s",
+              cursor:"pointer", fontSize:T.fxs, fontFamily:"inherit", transition:"all 0.12s", whiteSpace:"nowrap",
             }}>{r==="ALL"?"All Regions":REGIONS[r]}</button>
           ))}
         </div>
       )}
 
       {/* CONTENT */}
-      <div style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0, overflowY:"auto" }}>
+      <div className="ct-content-area" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0, overflowY:"auto" }}>
         {/* Plan mode — prototype, additive alongside the existing tabs */}
         {view==="plan" && <PlanMode parks={parks} riders={riders}/>}
 
@@ -3549,6 +3578,23 @@ export default function App() {
         {view==="settings" && settingsTab==="regions" && <ManageRegions regions={regions} parks={parks} onUpdate={updateRegions}/>}
         {view==="settings" && settingsTab==="backup"  && <ExportImport buildExport={exportDataset} onImport={importDataset} counts={`${parks.length} parks · ${riders.length} riders`}/>}
         {view==="settings" && settingsTab==="account" && <AccountSettings/>}
+      </div>
+
+      {/* BOTTOM TAB BAR — mobile only (.ct-nav-bottom is display:none above
+          the breakpoint); same NAV data as the top strip, app-style icon
+          over label, à la LogRide. */}
+      <div className="ct-nav-bottom">
+        {NAV.map(m => (
+          <button key={m.id} title={m.title} onClick={() => setView(m.id)} style={{
+            flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
+            padding:`${T.s2}px 0`, background:"none", border:"none", fontFamily:"inherit",
+            color: view===m.id ? T.ink : T.textFaint,
+            cursor:"pointer",
+          }}>
+            <span style={{ fontSize:T.flg }}>{m.icon}</span>
+            <span style={{ fontSize:T.fxs, fontWeight: view===m.id ? T.wBold : 400 }}>{m.label}</span>
+          </button>
+        ))}
       </div>
 
       {/* Coaster detail modal — opened from any clickable coaster name; park +
