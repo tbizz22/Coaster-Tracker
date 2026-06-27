@@ -3012,34 +3012,47 @@ function AccountSettings() {
 // circle, "accompanied" gets a corner badge (amber ring + a small "A" tag),
 // "no" gets a corner badge (greyscale + a small "✕" tag), "unknown" is a
 // dashed outline.
-function RiderAvatar({ rider, status, size = 28 }) {
+// `ridden` adds a green checkmark badge (top-right) on top of whatever
+// eligibility status is showing — used by Log mode to mark a logged credit
+// without losing the eligibility read. Eligibility badges stay bottom-right
+// so the two never collide.
+function RiderAvatar({ rider, status, size = 28, ridden = false, onClick }) {
   const initial = rider.name.slice(0, 1).toUpperCase();
   const base = { width:size, height:size, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center",
     fontSize:size*0.42, fontWeight:T.wBold, flexShrink:0, fontFamily:"inherit" };
   const badgeBase = { position:"absolute", bottom:-2, right:-2, width:size*0.5, height:size*0.5, borderRadius:"50%",
     display:"flex", alignItems:"center", justifyContent:"center", fontSize:size*0.32, fontWeight:T.wBold,
     border:`1.5px solid ${T.bg ?? "#0b0b0b"}`, lineHeight:1 };
+  const riddenBadge = ridden && (
+    <div style={{ position:"absolute", top:-2, left:-2, width:size*0.5, height:size*0.5, borderRadius:"50%",
+      display:"flex", alignItems:"center", justifyContent:"center", fontSize:size*0.32, fontWeight:T.wBold,
+      background:"#4ade80", color:"#0b0b0b", border:`1.5px solid ${T.bg ?? "#0b0b0b"}`, lineHeight:1 }}>✓</div>
+  );
+  const wrapStyle = { position:"relative", flexShrink:0, ...(onClick ? { cursor:"pointer" } : {}) };
 
+  let body;
   if (status === "alone") {
-    return <div title={`${rider.name} — can ride alone`} style={{ ...base, background:rider.color, color:"#0b0b0b" }}>{initial}</div>;
-  }
-  if (status === "accompanied") {
-    return (
-      <div title={`${rider.name} — only with an adult`} style={{ position:"relative", flexShrink:0 }}>
-        <div style={{ ...base, background:rider.color, color:"#0b0b0b", boxShadow:`0 0 0 2px ${ACC_AMBER}` }}>{initial}</div>
+    body = <div title={`${rider.name} — can ride alone`} style={{ ...base, background:rider.color, color:"#0b0b0b" }}>{initial}</div>;
+  } else if (status === "accompanied") {
+    body = (
+      <>
+        <div title={`${rider.name} — only with an adult`} style={{ ...base, background:rider.color, color:"#0b0b0b", boxShadow:`0 0 0 2px ${ACC_AMBER}` }}>{initial}</div>
         <div style={{ ...badgeBase, background:ACC_AMBER, color:"#0b0b0b" }}>A</div>
-      </div>
+      </>
     );
-  }
-  if (status === "no") {
-    return (
-      <div title={`${rider.name} — too short`} style={{ position:"relative", flexShrink:0 }}>
-        <div style={{ ...base, background:rider.color, color:"#0b0b0b", filter:"grayscale(1)", opacity:0.35 }}>{initial}</div>
+  } else if (status === "no") {
+    body = (
+      <>
+        <div title={`${rider.name} — too short`} style={{ ...base, background:rider.color, color:"#0b0b0b", filter:"grayscale(1)", opacity:0.35 }}>{initial}</div>
         <div style={{ ...badgeBase, background:"#6b7280", color:"#fff" }}>✕</div>
-      </div>
+      </>
     );
+  } else {
+    body = <div title={`${rider.name} — height unknown`} style={{ ...base, background:"transparent", border:`1px dashed ${T.border2}`, color:T.textFaint }}>{initial}</div>;
   }
-  return <div title={`${rider.name} — height unknown`} style={{ ...base, background:"transparent", border:`1px dashed ${T.border2}`, color:T.textFaint }}>{initial}</div>;
+
+  if (!onClick && !ridden) return body; // plain case (Plan mode): skip the wrapper div entirely
+  return <div onClick={onClick} style={wrapStyle}>{body}{riddenBadge}</div>;
 }
 
 // One coaster's family-fit threshold collapsed to a single number, per the
@@ -3148,6 +3161,93 @@ function PlanMode({ parks, riders }) {
               </div>
               <span style={{ background:tone.bg, color:tone.fg, fontSize:T.fxs, fontWeight:T.wBold, padding:"3px 10px", borderRadius:T.pill, whiteSpace:"nowrap" }}>
                 {fit.everyone}/{fit.total} fit all
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOG MODE (prototype) — "record what we rode today", the post-visit
+// counterpart to Plan mode. Same park drill-down + always-visible-avatar
+// pattern; tapping a rider's avatar on a coaster toggles that credit
+// (reuses the existing ridden Set / ck() key / onToggle wiring, no new
+// persistence).
+// ═══════════════════════════════════════════════════════════════════════════
+function riderLogProgress(park, rider, ridden) {
+  const live = liveCoasters(park);
+  const done = live.filter(c => ridden[rider.id]?.has(ck(park.id, c.name))).length;
+  return { done, total: live.length };
+}
+
+function LogMode({ parks, riders, ridden, onToggle }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = parks.find(p => p.id === selectedId) || null;
+
+  if (selected) {
+    const live = liveCoasters(selected);
+    return (
+      <div style={{ padding:T.s7, maxWidth:720 }}>
+        <button onClick={() => setSelectedId(null)} style={{ background:"none", border:"none", color:T.textLo, cursor:"pointer", fontSize:T.fsm, marginBottom:T.s4, fontFamily:"inherit", padding:0 }}>← Back to parks</button>
+        <div style={{ fontSize:T.fxl, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s2 }}>{selected.name}</div>
+        <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s5 }}>Tap a rider's avatar to log or undo a credit.</div>
+
+        <div style={{ display:"flex", gap:T.s3, marginBottom:T.s6, flexWrap:"wrap" }}>
+          {riders.map(r => {
+            const lp = riderLogProgress(selected, r, ridden);
+            return (
+              <div key={r.id} style={{ display:"flex", alignItems:"center", gap:T.s3, background:T.panel2, border:`1px solid ${T.border}`, borderRadius:T.r3, padding:`${T.s3} ${T.s4}` }}>
+                <RiderAvatar rider={r} status="alone" size={30}/>
+                <div>
+                  <div style={{ fontSize:T.fsm, fontWeight:T.wBold, color:T.ink }}>{r.name}</div>
+                  <div style={{ fontSize:T.fxs, color:T.textLo }}>{lp.done}/{lp.total} logged</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:T.s4 }}>
+          {live.map(c => {
+            const key = ck(selected.id, c.name);
+            return (
+              <div key={c.name} style={{ borderBottom:`1px solid ${T.border}`, paddingBottom:T.s3 }}>
+                <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink, marginBottom:T.s2 }}>{c.name}</div>
+                <div style={{ display:"flex", gap:T.s2 }}>
+                  {riders.map(r => (
+                    <RiderAvatar key={r.id} rider={r} status={rideStatus(c, r.height)} ridden={!!ridden[r.id]?.has(key)} onClick={() => onToggle(r.id, key)}/>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding:T.s7, maxWidth:560 }}>
+      <div style={{ fontSize:T.fxl, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s2 }}>What did we ride?</div>
+      <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s6 }}>Pick a park to log credits for {riders.map(r=>r.name).join(", ")}.</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:T.s3 }}>
+        {parks.map(p => {
+          const live = liveCoasters(p);
+          const done = riders.length ? Math.round(riders.reduce((s, r) => s + riderLogProgress(p, r, ridden).done, 0) / riders.length) : 0;
+          return (
+            <button key={p.id} onClick={() => setSelectedId(p.id)} style={{
+              display:"flex", alignItems:"center", gap:T.s4, padding:T.s4, borderRadius:T.r3,
+              border:`1px solid ${T.border}`, background:T.panel, cursor:"pointer", textAlign:"left", fontFamily:"inherit",
+            }}>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>{p.name}</div>
+                <div style={{ fontSize:T.fxs, color:T.textFaint }}>{REGIONS[p.region] || p.region}</div>
+              </div>
+              <span style={{ background:T.panel2, color:T.textLo, fontSize:T.fxs, fontWeight:T.wBold, padding:"3px 10px", borderRadius:T.pill, whiteSpace:"nowrap" }}>
+                avg {done}/{live.length} logged
               </span>
             </button>
           );
@@ -3457,6 +3557,7 @@ export default function App() {
   // the parks shown). Per-view config instead of an ad-hoc allow-list.
   const NAV = [
     { id:"plan",     icon:"🧭", label:"Plan",     title:"Plan (prototype)", region:false },
+    { id:"log",      icon:"📝", label:"Log",      title:"Log (prototype)",  region:false },
     { id:"parks",    icon:"🎢", label:"Parks",    region:true  },
     { id:"credits",  icon:"✓",  label:"Credits",  region:true  },
     { id:"settings", icon:"⚙",  label:"Settings", region:false },
@@ -3563,8 +3664,9 @@ export default function App() {
 
       {/* CONTENT */}
       <div className="ct-content-area" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0, overflowY:"auto" }}>
-        {/* Plan mode — prototype, additive alongside the existing tabs */}
+        {/* Plan/Log mode — prototype, additive alongside the existing tabs */}
         {view==="plan" && <PlanMode parks={parks} riders={riders}/>}
+        {view==="log" && <LogMode parks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden}/>}
 
         {/* Parks tab — unified left nav with Explorer / Height sub-views */}
         {view==="parks" && <ParksTab visibleParks={visibleParks} allParks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden} onSelectAll={selectAll} onClearAll={clearAll} onOpenCoaster={openCoaster}/>}
