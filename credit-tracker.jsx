@@ -1982,7 +1982,10 @@ function LookupList({ coasters, parkUrl, lookupSel, setLookupSel, lookupMin, set
   );
 }
 
-function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaster, onUpdateCoaster, onDeleteCoaster, onApplyHeights, onApplyScrapedAll, onApplySpeeds, onMergeImport }) {
+// `lockToParkId` (optional) pins the detail panel to one park and hides the
+// park list + multi-park batch tools — used to fold inline editing into
+// Plan mode instead of requiring a trip to Settings ▸ Parks & Coasters.
+function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaster, onUpdateCoaster, onDeleteCoaster, onApplyHeights, onApplyScrapedAll, onApplySpeeds, onMergeImport, lockToParkId }) {
   const blankPark    = { name:"", tag:"", region:"NE", badge:"", family:"" };
   const familySelect = (value, onChange) => (
     <select value={value||""} onChange={onChange} style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"6px 7px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none" }}>
@@ -1996,7 +1999,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
   // separate Manufacturer/Model fields for anyone who wants precise control.
   const blankCoaster = { name:"", typeText:"", min:"", minAccompanied:"", speed:"", racing:false, defunct:false };
 
-  const [selectedId,   setSelectedId]   = useState(parks[0]?.id || null);
+  const [selectedId,   setSelectedId]   = useState(lockToParkId || parks[0]?.id || null);
   const [addingPark,   setAddingPark]   = useState(false);
   const [parkDraft,    setParkDraft]    = useState(null);
   const [newParkForm,  setNewParkForm]  = useState(blankPark);
@@ -2307,8 +2310,8 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
   return (
     <div className="ct-split">
 
-      {/* ── Left: park list ── */}
-      <div className="ct-sidenav" style={{ width:260, flexShrink:0, borderRight:`1px solid ${T.border}`, overflowY:"auto", padding:T.s6, display:"flex", flexDirection:"column", gap:T.s2 }}>
+      {/* ── Left: park list — skipped when locked to a single park ── */}
+      {!lockToParkId && <div className="ct-sidenav" style={{ width:260, flexShrink:0, borderRight:`1px solid ${T.border}`, overflowY:"auto", padding:T.s6, display:"flex", flexDirection:"column", gap:T.s2 }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:T.s2 }}>
           <div style={{ ...labelCss, fontSize:T.fsm, color:T.textFaint, letterSpacing:"0.08em" }}>Parks</div>
           <button onClick={() => { setAddingPark(true); setSelectedId(null); setParkError(""); }}
@@ -2390,11 +2393,15 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
             </div>
           );
         })}
-      </div>
+      </div>}
 
       {/* ── Right: detail ── */}
       <div style={{ flex:1, overflowY:"auto", padding:"18px 24px 32px" }}>
 
+        {/* Add-park form + the multi-park batch tools (scrape-all, fill-stats)
+            only make sense when browsing the whole list — skip them when
+            locked to one park (e.g. inline editing from Plan mode). */}
+        {!lockToParkId && <>
         {/* Batch scrape — all parks with an official height-chart URL */}
         {(() => {
           const targets = parks.filter(p => p.officialUrl).length;
@@ -2558,6 +2565,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
             </form>
           </div>
         )}
+        </>}
 
         {/* Selected park detail */}
         {selectedPark && parkDraft && (
@@ -3090,15 +3098,28 @@ function riderFit(park, rider) {
   return { total: live.length, alone, accompanied, no };
 }
 
-function PlanMode({ parks, riders }) {
+function PlanMode({ parks, riders, parkEditProps }) {
   const [selectedId, setSelectedId] = useState(null);
+  const [editing, setEditing] = useState(false);
   const selected = parks.find(p => p.id === selectedId) || null;
+
+  if (selected && editing) {
+    return (
+      <div style={{ padding:T.s7, maxWidth:880 }}>
+        <button onClick={() => setEditing(false)} style={{ background:"none", border:"none", color:T.textLo, cursor:"pointer", fontSize:T.fsm, marginBottom:T.s4, fontFamily:"inherit", padding:0 }}>← Back to {selected.name}</button>
+        <ManageParks parks={parks} lockToParkId={selected.id} {...parkEditProps}/>
+      </div>
+    );
+  }
 
   if (selected) {
     const live = liveCoasters(selected);
     return (
       <div style={{ padding:T.s7, maxWidth:720 }}>
-        <button onClick={() => setSelectedId(null)} style={{ background:"none", border:"none", color:T.textLo, cursor:"pointer", fontSize:T.fsm, marginBottom:T.s4, fontFamily:"inherit", padding:0 }}>← Back to parks</button>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:T.s4 }}>
+          <button onClick={() => setSelectedId(null)} style={{ background:"none", border:"none", color:T.textLo, cursor:"pointer", fontSize:T.fsm, fontFamily:"inherit", padding:0 }}>← Back to parks</button>
+          {parkEditProps && <button onClick={() => setEditing(true)} style={{ background:"#0f2a3f", border:"1px solid #38bdf844", color:T.accent, borderRadius:T.r2, padding:"4px 12px", cursor:"pointer", fontSize:T.fxs, fontWeight:T.wBold, fontFamily:"inherit" }}>✎ Edit park</button>}
+        </div>
         <div style={{ fontSize:T.fxl, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s5 }}>{selected.name}</div>
 
         <div style={{ display:"flex", gap:T.s3, marginBottom:T.s6, flexWrap:"wrap" }}>
@@ -3263,7 +3284,11 @@ function LogMode({ parks, riders, ridden, onToggle }) {
 export default function App() {
   const [view,         setView]         = useState("parks");
   const [ridersOpen,   setRidersOpen]   = useState(false); // mobile-only rider pills popover
-  const [settingsTab,  setSettingsTab]  = useState("parks");     // parks | riders | regions
+  // Defaults to "riders" rather than "parks": Parks & Coasters editing now
+  // mostly happens inline from Plan mode, and its sub-nav button is hidden
+  // on mobile (see .ct-settings-parks-tab), so landing there by default
+  // would show orphaned content with no active tab highlighted.
+  const [settingsTab,  setSettingsTab]  = useState("riders");     // parks | riders | regions | backup | account
   const [region, setRegion] = useState("ALL");
   const [riders, setRiders] = useState(null);
   const [parks,  setParks]  = useState(null);
@@ -3563,8 +3588,11 @@ export default function App() {
     { id:"settings", icon:"⚙",  label:"Settings", region:false },
   ];
 
+  // "Parks & Coasters" is global-list browsing — on mobile that's redundant
+  // with the inline "✎ Edit park" entry point now in Plan mode, so it's
+  // hidden there (desktop keeps it; see .ct-settings-parks-tab in index.html).
   const SETTINGS_SUB = [
-    { id:"parks",   label:"🎡 Parks & Coasters" },
+    { id:"parks",   label:"🎡 Parks & Coasters", mobileHide:true },
     { id:"riders",  label:"👤 Riders"  },
     { id:"regions", label:"🗺 Regions" },
     { id:"backup",  label:"💾 Backup"  },
@@ -3635,7 +3663,7 @@ export default function App() {
       {view === "settings" && (
         <div className="ct-hscroll" style={{ background:T.panel, borderBottom:`1px solid ${T.border}`, padding:`0 ${T.s7}px`, display:"flex", gap:2, flexWrap:"nowrap" }}>
           {SETTINGS_SUB.map(s => (
-            <button key={s.id} onClick={() => setSettingsTab(s.id)} style={{
+            <button key={s.id} className={s.mobileHide ? "ct-settings-parks-tab" : undefined} onClick={() => setSettingsTab(s.id)} style={{
               padding:`${T.s3}px ${T.s6}px`, background:"none", border:"none",
               borderBottom: settingsTab===s.id ? `2px solid ${T.accent}` : "2px solid transparent",
               color: settingsTab===s.id ? T.ink : T.textLo,
@@ -3665,7 +3693,7 @@ export default function App() {
       {/* CONTENT */}
       <div className="ct-content-area" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0, overflowY:"auto" }}>
         {/* Plan/Log mode — prototype, additive alongside the existing tabs */}
-        {view==="plan" && <PlanMode parks={parks} riders={riders}/>}
+        {view==="plan" && <PlanMode parks={parks} riders={riders} parkEditProps={{ onAddPark:addPark, onUpdatePark:updatePark, onDeletePark:deletePark, onAddCoaster:addCoaster, onUpdateCoaster:updateCoaster, onDeleteCoaster:deleteCoaster, onApplyHeights:applyHeights, onApplyScrapedAll:applyScrapedHeights, onApplySpeeds:applySpeeds, onMergeImport:mergeImportCoasters }}/>}
         {view==="log" && <LogMode parks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden}/>}
 
         {/* Parks tab — unified left nav with Explorer / Height sub-views */}
