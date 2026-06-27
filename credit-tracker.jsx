@@ -740,7 +740,7 @@ function ColorDot({ color, size=10 }) {
 // ═══════════════════════════════════════════════════════════════════════════
 function modalDraftFrom(c) {
   return {
-    name: c.name ?? "", manufacturer: c.manufacturer ?? "", model: c.model ?? "",
+    id: c.id, name: c.name ?? "", manufacturer: c.manufacturer ?? "", model: c.model ?? "",
     material: c.material ?? "", style: c.style ?? "",
     min: c.min == null ? "" : String(c.min),
     minAccompanied: c.minAccompanied == null ? "" : String(c.minAccompanied),
@@ -749,6 +749,28 @@ function modalDraftFrom(c) {
     yearOpened: c.yearOpened == null ? "" : String(c.yearOpened),
     racing: !!c.racing, defunct: !!c.defunct,
   };
+}
+
+// Hoisted to module scope (not defined inside CoasterModal) — a component
+// defined inline in a render body gets a new function identity every render,
+// which makes React treat it as a different component type and remount its
+// subtree. That was silently stealing focus back to the autoFocus Name field
+// on every keystroke (any field's onChange re-rendered the modal, which
+// remounted Row/Field, which remounted their input children).
+function Row({ label, children }) {
+  return (
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:T.s4, padding:`${T.s2}px 0`, borderBottom:`1px solid ${T.hair}` }}>
+      <span style={{ fontSize:T.fsm, color:T.textLo }}>{label}</span>
+      <span style={{ fontSize:T.fbase, color:T.text, textAlign:"right", minWidth:0 }}>{children}</span>
+    </div>
+  );
+}
+function Field({ label, children }) {
+  return (
+    <label style={{ display:"flex", flexDirection:"column", gap:T.s1 }}>
+      <span style={fieldLabelCss}>{label}</span>{children}
+    </label>
+  );
 }
 
 function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
@@ -779,7 +801,7 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
     const idx = park.coasters.findIndex(c => c.name === coaster.name);
     if (idx === -1) { setErr("Couldn't locate this coaster to save."); return; }
     onSave(park.id, idx, {
-      name: draft.name.trim(), manufacturer: draft.manufacturer.trim(), model: draft.model.trim(),
+      id: draft.id, name: draft.name.trim(), manufacturer: draft.manufacturer.trim(), model: draft.model.trim(),
       material: draft.material.trim(), style: draft.style.trim(),
       min: v.h, minAccompanied: draft.minAccompanied, speedMph: draft.speed,
       heightFt: draft.heightFt, yearOpened: draft.yearOpened,
@@ -792,17 +814,6 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
   const numInput = (k, ph, extra={}) => (
     <input type="number" value={draft[k]} onChange={e=>st(k, e.target.value)} placeholder={ph}
       style={{ width:"100%", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none", ...extra }}/>
-  );
-  const Row = ({ label, children }) => (
-    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:T.s4, padding:`${T.s2}px 0`, borderBottom:`1px solid ${T.hair}` }}>
-      <span style={{ fontSize:T.fsm, color:T.textLo }}>{label}</span>
-      <span style={{ fontSize:T.fbase, color:T.text, textAlign:"right", minWidth:0 }}>{children}</span>
-    </div>
-  );
-  const Field = ({ label, children }) => (
-    <label style={{ display:"flex", flexDirection:"column", gap:T.s1 }}>
-      <span style={fieldLabelCss}>{label}</span>{children}
-    </label>
   );
 
   const prov = [
@@ -2293,7 +2304,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
     if (v.err) { setEditCoaster(ec => ({ ...ec, err:v.err })); return; }
     // In-place update (migrates credits if the name changes) — no delete+re-add.
     const { manufacturer, model } = splitManufacturerModel(d.typeText);
-    onUpdateCoaster(selectedPark.id, editCoaster.idx, { name:d.name, manufacturer, model, min:v.h, minAccompanied:d.minAccompanied, speedMph:d.speed, racing:d.racing, defunct:d.defunct });
+    onUpdateCoaster(selectedPark.id, editCoaster.idx, { id:d.id, name:d.name, manufacturer, model, min:v.h, minAccompanied:d.minAccompanied, speedMph:d.speed, racing:d.racing, defunct:d.defunct });
     setEditCoaster(null);
   }
 
@@ -2855,7 +2866,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                     onMouseEnter={e=>e.currentTarget.style.background="#1e293b22"}
                     onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"transparent":T.zebra}
                   >
-                    <button onClick={()=>setEditCoaster({idx:i,draft:{name:c.name,typeText:coasterType(c),min:c.min==null?"":String(c.min),minAccompanied:c.minAccompanied==null?"":String(c.minAccompanied),speed:c.speedMph==null?"":String(c.speedMph),racing:!!c.racing,defunct:!!c.defunct}})} style={{ background:"none", border:"none", padding:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:5 }}>
+                    <button onClick={()=>setEditCoaster({idx:i,draft:{id:c.id,name:c.name,typeText:coasterType(c),min:c.min==null?"":String(c.min),minAccompanied:c.minAccompanied==null?"":String(c.minAccompanied),speed:c.speedMph==null?"":String(c.speedMph),racing:!!c.racing,defunct:!!c.defunct}})} style={{ background:"none", border:"none", padding:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:5 }}>
                       <span style={{ fontSize:T.fbase, fontWeight:T.wSemi, color: c.defunct?T.textMid:T.text, textDecoration: c.defunct?"line-through":"none" }}>{c.name}</span>
                       {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px" }}>⇄</span>}
                       {c.defunct && <DefunctBadge/>}
