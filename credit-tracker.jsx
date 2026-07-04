@@ -144,7 +144,7 @@ async function loadHouseholdData() {
     list.push({
       id: c.id, name: c.name, manufacturer: c.manufacturer, model: c.model, material: c.material, style: c.style, min: c.min, minAccompanied: c.min_accompanied,
       speedMph: c.speed_mph, heightFt: c.height_ft, yearOpened: c.year_opened, racing: c.racing, defunct: c.defunct, rcdbId: c.rcdb_id,
-      rcdbUrl: c.rcdb_url, scale: c.scale, status: c.status, heightSource: c.height_source,
+      rcdbUrl: c.rcdb_url, scale: c.scale, status: c.status, heightSource: c.height_source, imageUrl: c.image_url,
     });
     coastersByPark.set(c.park_id, list);
   }
@@ -199,7 +199,7 @@ async function saveParks(parks) {
         height_ft: c.heightFt ?? null, year_opened: c.yearOpened ?? null,
         racing: !!c.racing, defunct: !!c.defunct, rcdb_id: c.rcdbId ?? null,
         rcdb_url: c.rcdbUrl ?? null, scale: c.scale ?? null, status: c.status ?? null,
-        height_source: c.heightSource ?? null, sort: j,
+        height_source: c.heightSource ?? null, image_url: c.imageUrl ?? null, sort: j,
       });
     });
   }
@@ -319,7 +319,7 @@ function normalizeCoaster(raw = {}) {
   if (raw.racing)  c.racing = true;
   if (raw.defunct) c.defunct = true;
   // carry through any external reference / provenance fields verbatim
-  for (const k of ["rcdbId", "rcdbUrl", "scale", "status", "heightSource"]) {
+  for (const k of ["rcdbId", "rcdbUrl", "scale", "status", "heightSource", "imageUrl"]) {
     if (raw[k] != null) c[k] = raw[k];
   }
   return c;
@@ -748,6 +748,7 @@ function modalDraftFrom(c) {
     heightFt: c.heightFt == null ? "" : String(c.heightFt),
     yearOpened: c.yearOpened == null ? "" : String(c.yearOpened),
     racing: !!c.racing, defunct: !!c.defunct,
+    imageUrl: c.imageUrl ?? "",
   };
 }
 
@@ -806,6 +807,7 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
       min: v.h, minAccompanied: draft.minAccompanied, speedMph: draft.speed,
       heightFt: draft.heightFt, yearOpened: draft.yearOpened,
       racing: draft.racing, defunct: draft.defunct,
+      imageUrl: draft.imageUrl.trim() || undefined,
     });
     setEditing(false); setErr("");
   }
@@ -886,6 +888,11 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
                 <input type="checkbox" checked={draft.defunct} onChange={e=>st("defunct", e.target.checked)} style={{ accentColor:"#f87171", width:14, height:14 }}/> Defunct
               </label>
             </div>
+            <Field label="Image URL">
+              <input value={draft.imageUrl} onChange={e=>st("imageUrl", e.target.value)} placeholder="https://upload.wikimedia.org/…"
+                style={{ width:"100%", boxSizing:"border-box", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none" }}/>
+              {draft.imageUrl && <img src={draft.imageUrl} alt="preview" style={{ marginTop:T.s2, width:"100%", maxHeight:120, objectFit:"cover", borderRadius:T.r2, border:`1px solid ${T.border}` }} onError={e=>e.currentTarget.style.display="none"}/>}
+            </Field>
             {err && <div style={{ fontSize:T.fsm, color:"#f87171" }}>{err}</div>}
             <div style={{ display:"flex", gap:T.s3, marginTop:T.s2 }}>
               <button type="submit" style={{ background:"#1e3a1e", border:"1px solid #4ade8044", color:"#4ade80", borderRadius:T.r3, padding:"8px 18px", cursor:"pointer", fontSize:T.fmd, fontWeight:T.wBold, fontFamily:"inherit" }}>Save changes</button>
@@ -907,6 +914,9 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
               <Row label="Style">{coaster.style || <span style={{ color:T.textFaint }}>—</span>}</Row>
               {prov.map(([k, v]) => <Row key={k} label={k}>{v}</Row>)}
             </div>
+            {coaster.imageUrl && (
+              <img src={coaster.imageUrl} alt={coaster.name} style={{ width:"100%", maxHeight:180, objectFit:"cover", borderRadius:T.r3, border:`1px solid ${T.border}`, marginTop:T.s5 }} onError={e=>e.currentTarget.style.display="none"}/>
+            )}
             <div style={{ display:"flex", gap:T.s3, marginTop:T.s5 }}>
               {canEdit && <button onClick={()=>setEditing(true)} style={{ background:"#0f2a3f", border:"1px solid #38bdf844", color:T.accent, borderRadius:T.r3, padding:"8px 16px", cursor:"pointer", fontSize:T.fmd, fontWeight:T.wBold, fontFamily:"inherit" }}>✎ Edit details</button>}
               <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textLo, borderRadius:T.r3, padding:"8px 14px", cursor:"pointer", fontSize:T.fmd, fontFamily:"inherit" }}>Close</button>
@@ -3112,11 +3122,27 @@ function riderFit(park, rider) {
 function PlanMode({ parks, riders, parkEditProps }) {
   const [selectedId, setSelectedId] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [addingPark, setAddingPark] = useState(false);
+  const [addForm, setAddForm] = useState({ name:"", tag:"", region: Object.keys(REGIONS)[0] || "NE", family:"" });
+  const [addError, setAddError] = useState("");
   const selected = parks.find(p => p.id === selectedId) || null;
+
+  function handleAddPark(e) {
+    e.preventDefault();
+    if (!addForm.name.trim()) { setAddError("Name is required."); return; }
+    if (!addForm.tag.trim())  { setAddError("Airport code is required."); return; }
+    const park = { id: uid(), name: addForm.name.trim(), tag: addForm.tag.trim().toUpperCase(), region: addForm.region, badge: "", family: addForm.family || undefined, coasters: [] };
+    parkEditProps.onAddPark(park);
+    setSelectedId(park.id);
+    setEditing(true);
+    setAddingPark(false);
+    setAddForm({ name:"", tag:"", region: Object.keys(REGIONS)[0] || "NE", family:"" });
+    setAddError("");
+  }
 
   if (selected && editing) {
     return (
-      <div style={{ padding:T.s7, maxWidth:880 }}>
+      <div style={{ padding:`${T.s5}px ${T.s6}px`, maxWidth:880 }}>
         <button onClick={() => setEditing(false)} style={{ background:"none", border:"none", color:T.textLo, cursor:"pointer", fontSize:T.fsm, marginBottom:T.s4, fontFamily:"inherit", padding:0 }}>← Back to {selected.name}</button>
         <ManageParks parks={parks} lockToParkId={selected.id} {...parkEditProps}/>
       </div>
@@ -3126,7 +3152,7 @@ function PlanMode({ parks, riders, parkEditProps }) {
   if (selected) {
     const live = liveCoasters(selected);
     return (
-      <div style={{ padding:T.s7, maxWidth:720 }}>
+      <div style={{ padding:`${T.s5}px ${T.s6}px`, maxWidth:720 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:T.s4 }}>
           <button onClick={() => setSelectedId(null)} style={{ background:"none", border:"none", color:T.textLo, cursor:"pointer", fontSize:T.fsm, fontFamily:"inherit", padding:0 }}>← Back to parks</button>
           {parkEditProps && <button onClick={() => setEditing(true)} style={{ background:"#0f2a3f", border:"1px solid #38bdf844", color:T.accent, borderRadius:T.r2, padding:"4px 12px", cursor:"pointer", fontSize:T.fxs, fontWeight:T.wBold, fontFamily:"inherit" }}>✎ Edit park</button>}
@@ -3137,7 +3163,7 @@ function PlanMode({ parks, riders, parkEditProps }) {
           {riders.map(r => {
             const rf = riderFit(selected, r);
             return (
-              <div key={r.id} style={{ display:"flex", alignItems:"center", gap:T.s3, background:T.panel2, border:`1px solid ${T.border}`, borderRadius:T.r3, padding:`${T.s3} ${T.s4}` }}>
+              <div key={r.id} style={{ display:"flex", alignItems:"center", gap:T.s3, background:T.panel2, border:`1px solid ${T.border}`, borderRadius:T.r3, padding:`${T.s3}px ${T.s4}px` }}>
                 <RiderAvatar rider={r} status="alone" size={30}/>
                 <div>
                   <div style={{ fontSize:T.fsm, fontWeight:T.wBold, color:T.ink }}>{r.name}</div>
@@ -3151,19 +3177,57 @@ function PlanMode({ parks, riders, parkEditProps }) {
           })}
         </div>
 
-        <div style={{ display:"flex", flexDirection:"column", gap:T.s4 }}>
+        {/* Height legend */}
+        <div style={{ display:"flex", gap:T.s4, marginBottom:T.s4, flexWrap:"wrap" }}>
+          <span style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:T.fxs, color:T.textFaint }}>
+            <span style={{ background:T.border2, borderRadius:T.r1, padding:"1px 6px", color:T.textMid, fontSize:T.fxs }}>54"</span>
+            ride alone
+          </span>
+          <span style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:T.fxs, color:T.textFaint }}>
+            <span style={{ background:ACC_AMBER+"22", border:`1px solid ${ACC_AMBER}55`, borderRadius:T.r1, padding:"1px 6px", color:ACC_AMBER, fontSize:T.fxs }}>48"</span>
+            with an adult
+          </span>
+        </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:T.s3 }}>
           {live.map(c => {
             const thr = effectiveThreshold(c);
+            const matColor = c.material === "Wood" ? "#fb923c" : c.material === "Hybrid" ? "#a78bfa" : "#38bdf8";
             return (
-              <div key={c.name} style={{ borderBottom:`1px solid ${T.border}`, paddingBottom:T.s3 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:T.s2 }}>
-                  <span style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>{c.name}</span>
-                  <span style={{ fontSize:T.fxs, color: thr?.companion ? ACC_AMBER : T.textFaint }}>
-                    {thr == null ? "height unknown" : thr.companion ? `${c.min ?? "—"}" · ${thr.ft}" w/ companion` : `${thr.ft}"`}
-                  </span>
+              <div key={c.name} style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r4, overflow:"hidden" }}>
+                <div style={{ display:"flex", gap:T.s4, padding:T.s4 }}>
+                  {/* Thumbnail — real image if available, styled placeholder otherwise */}
+                  {c.imageUrl ? (
+                    <img src={c.imageUrl} alt={c.name} style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, objectFit:"cover", border:`1px solid ${T.border}` }}/>
+                  ) : (
+                    <div style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, background:`linear-gradient(135deg, ${matColor}33, ${matColor}11)`, border:`1px solid ${matColor}44`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>
+                      🎢
+                    </div>
+                  )}
+                  {/* Info */}
+                  <div style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column", justifyContent:"center", gap:T.s1 }}>
+                    <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name}</div>
+                    <div style={{ fontSize:T.fxs, color:T.textFaint }}>
+                      {[c.manufacturer, c.model].filter(Boolean).join(" · ") || c.material || "Coaster"}
+                    </div>
+                    {/* Height badge(s) */}
+                    <div style={{ display:"flex", gap:T.s2, flexWrap:"wrap", marginTop:2 }}>
+                      {thr == null ? (
+                        <span style={{ fontSize:T.fxs, color:T.textGhost }}>height unknown</span>
+                      ) : thr.companion ? (
+                        <>
+                          <span style={{ background:ACC_AMBER+"22", border:`1px solid ${ACC_AMBER}55`, borderRadius:T.r1, padding:"1px 7px", color:ACC_AMBER, fontSize:T.fxs, fontWeight:T.wBold }}>{thr.ft}" w/ adult</span>
+                          {c.min != null && <span style={{ background:T.border2, borderRadius:T.r1, padding:"1px 7px", color:T.textMid, fontSize:T.fxs }}>{c.min}" alone</span>}
+                        </>
+                      ) : (
+                        <span style={{ background:T.border2, borderRadius:T.r1, padding:"1px 7px", color:T.textMid, fontSize:T.fxs }}>{thr.ft}" alone</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div style={{ display:"flex", gap:T.s2 }}>
-                  {riders.map(r => <RiderAvatar key={r.id} rider={r} status={rideStatus(c, r.height)}/>)}
+                {/* Rider eligibility row */}
+                <div style={{ display:"flex", gap:T.s3, padding:`${T.s3}px ${T.s4}px`, borderTop:`1px solid ${T.border}`, background:T.panel2 }}>
+                  {riders.map(r => <RiderAvatar key={r.id} rider={r} status={rideStatus(c, r.height)} size={30}/>)}
                 </div>
               </div>
             );
@@ -3174,26 +3238,81 @@ function PlanMode({ parks, riders, parkEditProps }) {
   }
 
   return (
-    <div style={{ padding:T.s7, maxWidth:560 }}>
-      <div style={{ fontSize:T.fxl, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s2 }}>Where should we go?</div>
-      <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s6 }}>Scored for {riders.map(r=>r.name).join(", ")}.</div>
+    <div style={{ padding:`${T.s5}px ${T.s6}px`, maxWidth:560 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:T.s2 }}>
+        <div style={{ fontSize:T.fxl, fontWeight:T.wHeavy, color:T.ink }}>Where should we go?</div>
+        {parkEditProps && (
+          <button onClick={() => { setAddingPark(a => !a); setAddError(""); }} style={{
+            display:"flex", alignItems:"center", gap:4, background: addingPark ? T.border : "#0f2a3f",
+            border:`1px solid ${addingPark ? T.border2 : "#38bdf844"}`, color: addingPark ? T.textLo : T.accent,
+            borderRadius:T.r2, padding:"5px 12px", cursor:"pointer", fontSize:T.fxs, fontWeight:T.wBold, fontFamily:"inherit", flexShrink:0,
+          }}>
+            {addingPark ? "✕ Cancel" : "＋ Add park"}
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s5 }}>Scored for {riders.map(r=>r.name).join(", ")}.</div>
+
+      {addingPark && (
+        <form onSubmit={handleAddPark} style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r4, padding:T.s5, marginBottom:T.s5, display:"flex", flexDirection:"column", gap:T.s4 }}>
+          <div style={{ ...labelCss, color:T.textFaint }}>New park</div>
+          {addError && <div style={{ fontSize:T.fxs, color:"#f87171" }}>{addError}</div>}
+          <div style={{ display:"flex", flexDirection:"column", gap:T.s2 }}>
+            <label style={{ ...fieldLabelCss }}>Park name *</label>
+            <input value={addForm.name} onChange={e => setAddForm(f=>({...f, name:e.target.value}))} placeholder="e.g. Six Flags Great Adventure" style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 10px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }}/>
+          </div>
+          <div style={{ display:"flex", gap:T.s4 }}>
+            <div style={{ display:"flex", flexDirection:"column", gap:T.s2, flex:1 }}>
+              <label style={{ ...fieldLabelCss }}>Airport code *</label>
+              <input value={addForm.tag} onChange={e => setAddForm(f=>({...f, tag:e.target.value}))} placeholder="e.g. EWR" maxLength={4} style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 10px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", width:"100%", boxSizing:"border-box", textTransform:"uppercase" }}/>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:T.s2, flex:1 }}>
+              <label style={{ ...fieldLabelCss }}>Region</label>
+              <select value={addForm.region} onChange={e => setAddForm(f=>({...f, region:e.target.value}))} style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 10px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }}>
+                {Object.entries(REGIONS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:T.s2 }}>
+            <label style={{ ...fieldLabelCss }}>Chain / family</label>
+            <select value={addForm.family} onChange={e => setAddForm(f=>({...f, family:e.target.value}))} style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 10px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }}>
+              <option value="">— Independent —</option>
+              {Object.entries(PARK_FAMILIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+          </div>
+          <button type="submit" style={{ background:T.accent, border:"none", borderRadius:T.r2, padding:"8px 0", color:"#0f172a", fontWeight:T.wBold, fontSize:T.fbase, fontFamily:"inherit", cursor:"pointer" }}>Add park</button>
+        </form>
+      )}
+
       <div style={{ display:"flex", flexDirection:"column", gap:T.s3 }}>
         {parks.map(p => {
-          const fit = familyFit(p, riders);
-          const ratio = fit.total ? fit.everyone / fit.total : 0;
-          const tone = fit.total === 0 ? { bg:T.panel2, fg:T.textFaint } : ratio >= 0.6 ? { bg:"#4ade8022", fg:"#4ade80" } : ratio >= 0.25 ? { bg:`${ACC_AMBER}22`, fg:ACC_AMBER } : { bg:"#f8717122", fg:"#f87171" };
+          const live = liveCoasters(p);
+          const fits = riders.map(r => {
+            const rf = riderFit(p, r);
+            const pct = rf.total ? Math.round((rf.alone + rf.accompanied) / rf.total * 100) : 0;
+            return { r, pct, rf };
+          });
           return (
             <button key={p.id} onClick={() => setSelectedId(p.id)} style={{
-              display:"flex", alignItems:"center", gap:T.s4, padding:T.s4, borderRadius:T.r3,
-              border:`1px solid ${T.border}`, background:T.panel, cursor:"pointer", textAlign:"left", fontFamily:"inherit",
+              display:"flex", flexDirection:"column", gap:T.s3, padding:T.s4, borderRadius:T.r3,
+              border:`1px solid ${T.border}`, background:T.panel, cursor:"pointer", textAlign:"left", fontFamily:"inherit", width:"100%",
             }}>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>{p.name}</div>
-                <div style={{ fontSize:T.fxs, color:T.textFaint }}>{REGIONS[p.region] || p.region}</div>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:T.s3 }}>
+                <div>
+                  <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>{p.name}</div>
+                  <div style={{ fontSize:T.fxs, color:T.textFaint }}>{REGIONS[p.region] || p.region} · {live.length} coasters</div>
+                </div>
               </div>
-              <span style={{ background:tone.bg, color:tone.fg, fontSize:T.fxs, fontWeight:T.wBold, padding:"3px 10px", borderRadius:T.pill, whiteSpace:"nowrap" }}>
-                {fit.everyone}/{fit.total} fit all
-              </span>
+              {riders.length > 0 && (
+                <div style={{ display:"flex", gap:T.s6, flexWrap:"nowrap" }}>
+                  {fits.map(({ r, pct }) => (
+                    <div key={r.id} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                      <RiderAvatar rider={r} status="alone" size={44}/>
+                      <span style={{ fontSize:T.fxs, color:r.color, fontWeight:T.wBold, lineHeight:1 }}>{pct}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </button>
           );
         })}
@@ -3295,6 +3414,7 @@ function LogMode({ parks, riders, ridden, onToggle }) {
 export default function App() {
   const [view,         setView]         = useState("parks");
   const [ridersOpen,   setRidersOpen]   = useState(false); // mobile-only rider pills popover
+  const [isMobile,     setIsMobile]     = useState(() => window.innerWidth < 640);
   // Defaults to "riders" rather than "parks": Parks & Coasters editing now
   // mostly happens inline from Plan mode, and its sub-nav button is hidden
   // on mobile (see .ct-settings-parks-tab), so landing there by default
@@ -3310,6 +3430,16 @@ export default function App() {
   // live from `parks` so edits stay in sync. null = closed.
   const [coasterModal, setCoasterModal] = useState(null);
   const openCoaster = useCallback((parkId, coaster) => setCoasterModal({ parkId, coasterName: coaster.name }), []);
+
+  // Track mobile breakpoint; redirect desktop-only views when resizing down
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  useEffect(() => {
+    if (isMobile && (view === 'parks' || view === 'credits')) setView('plan');
+  }, [isMobile, view]);
 
   // Load everything from Supabase on mount (HOUSEHOLD_ID set by the auth gate
   // in main.jsx before App renders).
@@ -3722,10 +3852,10 @@ export default function App() {
       </div>
 
       {/* BOTTOM TAB BAR — mobile only (.ct-nav-bottom is display:none above
-          the breakpoint); same NAV data as the top strip, app-style icon
-          over label, à la LogRide. */}
+          the breakpoint); Plan/Log/Settings only — Parks and Credits are
+          desktop-only views and are excluded from mobile nav. */}
       <div className="ct-nav-bottom">
-        {NAV.map(m => (
+        {NAV.filter(m => ["plan","log","settings"].includes(m.id)).map(m => (
           <button key={m.id} title={m.title} onClick={() => setView(m.id)} style={{
             flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
             padding:`${T.s2}px 0`, background:"none", border:"none", fontFamily:"inherit",
