@@ -459,51 +459,75 @@ const SUPABASE_URL    = process.env.SUPABASE_URL    || process.env.VITE_SUPABASE
 const SUPABASE_SVC    = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const COASTER_BUCKET  = "coaster-images";
 
+const WIKI_HDR = { "User-Agent": "CoasterTracker/1.0 (educational; contact via github)" };
+const normWiki = s => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
 // Wikimedia Commons: search for a coaster image by name + park, return the
 // best-matching direct image URL and a confidence score.
+// Tries multiple query strategies to maximise hit rate.
 async function lookupWikimediaImage(coasterName, parkName) {
-  const query = `${coasterName} ${parkName} roller coaster`;
-  const searchUrl = `${WIKI_API}?action=query&list=search&srsearch=${encodeURIComponent(query)}&srnamespace=6&srlimit=5&format=json&origin=*`;
-  const searchResp = await fetch(searchUrl, { headers: { "User-Agent": "CoasterTracker/1.0 (educational; contact via github)" } });
-  if (!searchResp.ok) return null;
-  const searchData = await searchResp.json();
-  const results = searchData?.query?.search ?? [];
-  if (!results.length) return null;
+  const normCoaster = normWiki(coasterName);
 
-  // Pick best result: prefer ones whose title contains the coaster name.
-  const norm = s => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const normCoaster = norm(coasterName);
-  let picked = results[0];
-  let confidence = "low";
-  for (const r of results) {
-    if (norm(r.title).includes(normCoaster)) { picked = r; confidence = "high"; break; }
+  // Try queries from most-specific to least. Stop at first hit whose title
+  // contains the coaster name (high confidence), or keep the first result
+  // from any query as a low-confidence fallback.
+  const queries = [
+    `${coasterName} ${parkName} roller coaster`,
+    `${coasterName} roller coaster`,
+    `${coasterName} coaster`,
+    coasterName,
+  ];
+
+  let lowFallback = null;
+
+  for (const query of queries) {
+    const searchUrl = `${WIKI_API}?action=query&list=search&srsearch=${encodeURIComponent(query)}&srnamespace=6&srlimit=8&format=json&origin=*`;
+    const searchResp = await fetch(searchUrl, { headers: WIKI_HDR });
+    if (!searchResp.ok) continue;
+    const results = (await searchResp.json())?.query?.search ?? [];
+
+    for (const r of results) {
+      const titleNorm = normWiki(r.title);
+      if (titleNorm.includes(normCoaster)) {
+        // High-confidence match — resolve immediately.
+        const url = await resolveWikiUrl(r.title);
+        if (url) return { imageUrl: url, imageSource: "wikimedia", imageConfidence: "high" };
+      } else if (!lowFallback) {
+        lowFallback = r.title;
+      }
+    }
   }
 
-  // Resolve to a direct URL via imageinfo API.
-  const title = picked.title;
+  // No high-confidence match found — use low-confidence fallback if any.
+  if (lowFallback) {
+    const url = await resolveWikiUrl(lowFallback);
+    if (url) return { imageUrl: url, imageSource: "wikimedia", imageConfidence: "low" };
+  }
+
+  return null;
+}
+
+async function resolveWikiUrl(title) {
   const infoUrl = `${WIKI_API}?action=query&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url&format=json&origin=*`;
-  const infoResp = await fetch(infoUrl, { headers: { "User-Agent": "CoasterTracker/1.0 (educational; contact via github)" } });
-  if (!infoResp.ok) return null;
-  const infoData = await infoResp.json();
-  const pages = Object.values(infoData?.query?.pages ?? {});
+  const resp = await fetch(infoUrl, { headers: WIKI_HDR });
+  if (!resp.ok) return null;
+  const pages = Object.values((await resp.json())?.query?.pages ?? {});
   const url = pages[0]?.imageinfo?.[0]?.url ?? null;
-  if (!url) return null;
-
-  // Only accept image file types we can display.
-  if (!/\.(jpe?g|png|webp|gif)(\?|$)/i.test(url)) return null;
-
-  return { imageUrl: url, imageSource: "wikimedia", imageConfidence: confidence };
+  // Only accept displayable image types.
+  if (!url || !/\.(jpe?g|png|webp)(\?|$)/i.test(url)) return null;
+  return url;
 }
 
 // Parse the primary image from an RCDB coaster page HTML.
-function parseRcdbImage(html, baseUrl) {
-  // RCDB coaster pages have a main photo in a <figure> or an <img> with src
-  // matching /pr/<id>.<ext> — the highest-res version is linked via <a>.
-  const linkM = html.match(/<a[^>]+href="(\/pr\/[^"]+\.(jpe?g|png))"[^>]*>/i);
-  if (linkM) return "https://rcdb.com" + linkM[1];
-  const imgM = html.match(/<img[^>]+src="(\/pr\/[^"]+\.(jpe?g|png))"[^>]*/i);
-  if (imgM) return "https://rcdb.com" + imgM[1];
-  return null;
+// RCDB lazy-loads images via JS; the server-rendered HTML encodes the image
+// as data-url on the #opfAnchor element, e.g.:
+//   <a id=opfAnchor data-url=/aaaaabc ...>
+// That path, prepended with https://rcdb.com, serves the image directly as JPEG.
+function parseRcdbImage(html) {
+  const m = html.match(/id=opfAnchor[^>]+data-url=([^\s>]+)/i);
+  if (!m) return null;
+  const path = m[1].replace(/^["']|["']$/g, "");
+  return path ? `https://rcdb.com${path}` : null;
 }
 
 // Download an RCDB image and upload to Supabase Storage. Returns the public CDN URL.
@@ -551,12 +575,14 @@ async function lookupImage(name, parkName, rcdbId, rcdbHtml, isAborted = () => f
   }
 
   // 2. RCDB image → Supabase Storage mirror.
-  if (!rcdbHtml || !rcdbId) return null;
+  if (!rcdbHtml) return null;
   try {
     if (isAborted()) return null;
     const rcdbImgUrl = parseRcdbImage(rcdbHtml);
-    if (!rcdbImgUrl) return null;
-    const publicUrl = await mirrorImageToSupabase(rcdbImgUrl, rcdbId);
+    if (!rcdbImgUrl) { console.log(`[images] · no image on RCDB page for "${name}"`); return null; }
+    // Use rcdbId as storage key; fall back to a slugified coaster name.
+    const storageKey = rcdbId ?? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 60);
+    const publicUrl = await mirrorImageToSupabase(rcdbImgUrl, storageKey);
     console.log(`[images] ✓ rcdb-mirror "${name}" → ${publicUrl}`);
     return { imageUrl: publicUrl, imageSource: "rcdb-mirror", imageConfidence: "high" };
   } catch (e) {
