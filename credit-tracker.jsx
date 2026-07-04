@@ -3469,6 +3469,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (isMobile && (view === 'parks' || view === 'credits')) setView('plan');
+    if (!isMobile && (view === 'plan' || view === 'log')) setView('parks');
   }, [isMobile, view]);
 
   // Load everything from Supabase on mount (HOUSEHOLD_ID set by the auth gate
@@ -3753,10 +3754,10 @@ export default function App() {
   // `region: true` = the top-bar region filter applies to this view (it filters
   // the parks shown). Per-view config instead of an ad-hoc allow-list.
   const NAV = [
-    { id:"plan",     Icon:IcoPlan,     label:"Plan",     region:false },
-    { id:"log",      Icon:IcoLog,      label:"Log",      region:false },
-    { id:"parks",    Icon:IcoParks,    label:"Parks",    region:true  },
-    { id:"credits",  Icon:IcoCredits,  label:"Credits",  region:true  },
+    { id:"plan",     Icon:IcoPlan,     label:"Plan",     region:false, mobileOnly:true  },
+    { id:"log",      Icon:IcoLog,      label:"Log",      region:false, mobileOnly:true  },
+    { id:"parks",    Icon:IcoParks,    label:"Parks",    region:true,  desktopOnly:true },
+    { id:"credits",  Icon:IcoCredits,  label:"Credits",  region:true,  desktopOnly:true },
     { id:"settings", Icon:IcoSettings, label:"Settings", region:false },
   ];
 
@@ -3804,7 +3805,7 @@ export default function App() {
             </button>
           </div>
           <div className="ct-nav-top" style={{ display:"flex", gap:T.s1, background:T.panel2, borderRadius:T.r4, padding:T.s1, border:`1px solid ${T.border}` }}>
-            {NAV.map(m => (
+            {NAV.filter(m => !m.mobileOnly).map(m => (
               <button key={m.id} title={m.label} onClick={() => setView(m.id)} style={{
                 display:"flex", alignItems:"center", gap:T.s2,
                 padding:`${T.s2}px ${T.s6}px`, borderRadius:T.r3, fontFamily:"inherit", fontSize:T.fbase, fontWeight: view===m.id?T.wBold:400,
@@ -3889,7 +3890,7 @@ export default function App() {
           the breakpoint); Plan/Log/Settings only — Parks and Credits are
           desktop-only views and are excluded from mobile nav. */}
       <div className="ct-nav-bottom">
-        {NAV.filter(m => ["plan","log","settings"].includes(m.id)).map(m => (
+        {NAV.filter(m => !m.desktopOnly).map(m => (
           <button key={m.id} title={m.title} onClick={() => setView(m.id)} style={{
             flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
             padding:`${T.s2}px 0`, background:"none", border:"none", fontFamily:"inherit",
