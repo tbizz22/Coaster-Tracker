@@ -335,6 +335,14 @@ does **not** change any counts.
   section) — added a new `family` field (kept separate from `badge`, which stays
   available for one-off labels like "🏠 Home Park") populated for all 23 parks.
 
+## Mobile & desktop view fixes
+
+- **Fix desktop views — enforce responsive boundaries.** Several views (Parks, Credits) are intentionally desktop-only but there is no hard enforcement that prevents desktop layout patterns from leaking into mobile viewports. Audit every view at ≤640px and ≥821px: desktop views (Parks, Credits) must not be reachable or render broken UI on mobile; mobile-specific layouts (Plan mode park cards, bottom tab bar) must not appear on desktop. Each view should render only the layout appropriate for its target breakpoint.
+
+- **Settings — mobile Parks & Coasters tab is inaccessible.** The "Parks & Coasters" sub-tab in Settings is hidden on mobile (`ct-settings-parks-tab` / `display:none !important` below 640px), but there is no mobile-friendly replacement path to reach that content. Need a mobile-accessible entry point — likely a sheet/drawer or a dedicated flow reachable from Plan mode — so park and coaster management is not a dead end on phone.
+
+- **Settings sub-nav — vertical tab selectors broken on mobile.** The horizontal sub-tab strip (Riders · Regions · Backup · Account) does not work well as a vertical-tab pattern on small screens. Redesign the Settings sub-navigation for mobile: options include a stacked list/menu pattern, a `<select>`, or a sheet-style bottom drawer that lists the sections, replacing the current horizontal pill strip that clips or wraps.
+
 ## Nice-to-haves
 
 - **Add park from mobile.** The current "Add park" flow (Settings ▸ Parks & Coasters)
