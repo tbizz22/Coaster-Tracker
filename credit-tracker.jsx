@@ -15,12 +15,24 @@ const T = {
   r1:4, r2:6, r3:8, r4:10, r5:12, pill:999,
   // font weights
   wMed:500, wSemi:600, wBold:700, wHeavy:800,
-  // color roles (dark theme)
-  bg:"#060c18", panel:"#0b1222", panel2:"#0f172a", zebra:"#070d1a",
-  border:"#1e293b", border2:"#334155", hair:"#0f172a",
-  ink:"#f1f5f9", text:"#e2e8f0", textMid:"#94a3b8", textLo:"#64748b",
-  textFaint:"#475569", textGhost:"#334155", accent:"#38bdf8",
+  // color roles — Park Attack brand palette (dark theme)
+  bg:"#0E1016", panel:"#131820", panel2:"#1C2234", zebra:"#0A0F18",
+  border:"#2A3042", border2:"#3D4A5E", hair:"#1C2234",
+  ink:"#F5F6FA", text:"#E8EDF5", textMid:"#94a3b8", textLo:"#64748b",
+  textFaint:"#475569", textGhost:"#2A3042", accent:"#E8362E",
 };
+
+// ── Park Attack UI icon components ────────────────────────────────────────
+// Line icons from the brand asset package; stroke="currentColor" so they
+// inherit color from the parent element (active/inactive states via CSS).
+const _Ico = ({size=16, children}) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
+);
+const IcoPlan     = ({size}) => <_Ico size={size}><path d="M16 28 C 16 28 25 19 25 13 A 9 9 0 1 0 7 13 C 7 19 16 28 16 28 Z"/><circle cx="16" cy="13" r="3.2"/></_Ico>;
+const IcoLog      = ({size}) => <_Ico size={size}><path d="M6 9 h9 M6 16 h9 M6 23 h9"/><path d="M20 9 l2.5 2.5 L27 7 M20 16 l2.5 2.5 L27 14 M20 23 l2.5 2.5 L27 21"/></_Ico>;
+const IcoParks    = ({size}) => <_Ico size={size}><path d="M3 21 C 7 9, 12 9, 15 17 C 18 25, 25 25, 29 11"/><path d="M3 26 L29 26"/><path d="M11 19 L11 26 M22 21 L22 26"/></_Ico>;
+const IcoCredits  = ({size}) => <_Ico size={size}><polygon points="16,4 19.6,11.5 27.5,12.5 21.7,18 23.2,26 16,22 8.8,26 10.3,18 4.5,12.5 12.4,11.5"/></_Ico>;
+const IcoSettings = ({size}) => <_Ico size={size}><circle cx="16" cy="16" r="5.5"/><path d="M16 3v3M16 26v3M3 16h3M26 16h3M7.2 7.2l2.1 2.1M22.7 22.7l2.1 2.1M24.8 7.2l-2.1 2.1M9.3 22.7l-2.1 2.1"/></_Ico>;
 // Uppercase micro-label used for section headers / column heads.
 const labelCss = { fontSize:T.fxs, fontWeight:T.wBold, color:T.textFaint, textTransform:"uppercase", letterSpacing:"0.07em" };
 // Uppercase field label sitting above a form input (a touch lighter/tighter).
@@ -33,7 +45,7 @@ let REGIONS = { ...DEFAULT_REGIONS };
 // TOTAL_COASTERS is now computed dynamically from parks state in App
 
 const COLOR_PALETTE = [
-  "#38bdf8","#fb923c","#4ade80","#f472b6","#a78bfa",
+  "#2FA8FF","#fb923c","#4ade80","#f472b6","#a78bfa",
   "#facc15","#34d399","#f87171","#60a5fa","#e879f9",
 ];
 
@@ -445,7 +457,7 @@ function defunctCoasters(p) { return (p.coasters || []).filter(c => c.defunct); 
 
 // ── Geography (for the offline SVG Map view) ─────────────────────────────────
 // Region marker colors; unknown/user regions fall back to a neutral hue.
-const REGION_COLORS = { NE:"#38bdf8", SE:"#4ade80", MW:"#facc15", TX:"#fb923c", CA:"#f472b6", INT:"#a78bfa" };
+const REGION_COLORS = { NE:"#2FA8FF", SE:"#4ade80", MW:"#facc15", TX:"#fb923c", CA:"#f472b6", INT:"#a78bfa" };
 function regionColor(code) { return REGION_COLORS[code] || "#94a3b8"; }
 
 // Park-family / chain ownership groups (replaces the old freeform `badge` for this
@@ -918,7 +930,7 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
               <img src={coaster.imageUrl} alt={coaster.name} style={{ width:"100%", maxHeight:180, objectFit:"cover", borderRadius:T.r3, border:`1px solid ${T.border}`, marginTop:T.s5 }} onError={e=>e.currentTarget.style.display="none"}/>
             )}
             <div style={{ display:"flex", gap:T.s3, marginTop:T.s5 }}>
-              {canEdit && <button onClick={()=>setEditing(true)} style={{ background:"#0f2a3f", border:"1px solid #38bdf844", color:T.accent, borderRadius:T.r3, padding:"8px 16px", cursor:"pointer", fontSize:T.fmd, fontWeight:T.wBold, fontFamily:"inherit" }}>✎ Edit details</button>}
+              {canEdit && <button onClick={()=>setEditing(true)} style={{ background:"#2d0e0e", border:`1px solid ${T.accent}44`, color:T.accent, borderRadius:T.r3, padding:"8px 16px", cursor:"pointer", fontSize:T.fmd, fontWeight:T.wBold, fontFamily:"inherit" }}>✎ Edit details</button>}
               <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textLo, borderRadius:T.r3, padding:"8px 14px", cursor:"pointer", fontSize:T.fmd, fontFamily:"inherit" }}>Close</button>
             </div>
           </>
@@ -1021,7 +1033,7 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
   const markerR = p => 5 + Math.min(liveCoasters(p).length, 18) * 0.5;
   const outlinePts = US_OUTLINE.map(([lng, lat]) => project(lat, lng).join(",")).join(" ");
   const mapView = (
-    <div style={{ flex:1, position:"relative", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", padding:16, background:"radial-gradient(circle at 40% 35%, #0a1426, #060c18)" }}>
+    <div style={{ flex:1, position:"relative", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", padding:16, background:`radial-gradient(circle at 40% 35%, ${T.panel2}, ${T.bg})` }}>
       <div style={{ position:"absolute", top:12, left:16, zIndex:1, fontSize:T.fsm, color:T.textFaint }}>
         {placed.length} parks · click a marker to open it
         {unplaced.length > 0 && <span style={{ color:T.textGhost }}> · {unplaced.length} not placed (add lat/lng in settings)</span>}
@@ -1041,7 +1053,7 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
               {hov && <circle r={markerR(p)+5} fill={col} opacity={0.18}/>}
               <circle r={markerR(p)} fill={col} fillOpacity={hov?0.95:0.7} stroke={hov?"#f8fafc":col} strokeWidth={hov?2:1}/>
               {hov && (
-                <text x={0} y={-markerR(p)-7} textAnchor="middle" fontSize={13} fontWeight={700} fill="#f1f5f9" style={{ paintOrder:"stroke", stroke:"#060c18", strokeWidth:4, strokeLinejoin:"round" }}>{p.name}</text>
+                <text x={0} y={-markerR(p)-7} textAnchor="middle" fontSize={13} fontWeight={700} fill="#F5F6FA" style={{ paintOrder:"stroke", stroke:"#0E1016", strokeWidth:4, strokeLinejoin:"round" }}>{p.name}</text>
               )}
             </g>
           );
@@ -1078,7 +1090,7 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
         </div>
         {park.officialUrl && (
           <a href={park.officialUrl} target="_blank" rel="noreferrer"
-            style={{ fontSize:T.fsm, color:T.accent, textDecoration:"none", background:"#0f2a3f", border:"1px solid #38bdf833", borderRadius:T.r3, padding:"5px 11px", whiteSpace:"nowrap" }}>
+            style={{ fontSize:T.fsm, color:T.accent, textDecoration:"none", background:"#2d0e0e", border:`1px solid ${T.accent}33`, borderRadius:T.r3, padding:"5px 11px", whiteSpace:"nowrap" }}>
             📏 Official height chart ↗
           </a>
         )}
@@ -1090,7 +1102,7 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
         <button onClick={() => setLensRiderId(null)} style={{
           display:"flex", alignItems:"center", gap:5, padding:"3px 11px", borderRadius:T.r5,
           border: !lensRider ? `1px solid ${T.accent}` : `1px solid ${T.border2}`,
-          background: !lensRider ? "#38bdf822" : "transparent",
+          background: !lensRider ? `${T.accent}22` : "transparent",
           color: !lensRider ? T.accent : T.textLo, cursor:"pointer", fontSize:T.fsm, fontFamily:"inherit",
         }}>🗺 Overview</button>
         {riders.map(r => (
@@ -1793,7 +1805,7 @@ function ManageRiders({ riders, onAdd, onUpdate, onDelete }) {
           {error && <div style={{ fontSize:T.fsm, color:"#f87171" }}>{error}</div>}
 
           <div style={{ display:"flex", gap:T.s3 }}>
-            <button type="submit" style={{ background: editId ? "#1e3a1e" : "#0f2a3f", border:`1px solid ${editId?"#4ade8044":"#38bdf844"}`, color: editId?"#4ade80":T.accent, borderRadius:T.r3, padding:"8px 18px", cursor:"pointer", fontSize:T.fmd, fontWeight:T.wBold, fontFamily:"inherit" }}>
+            <button type="submit" style={{ background: editId ? "#1e3a1e" : "#2d0e0e", border:`1px solid ${editId?"#4ade8044":`${T.accent}44`}`, color: editId?"#4ade80":T.accent, borderRadius:T.r3, padding:"8px 18px", cursor:"pointer", fontSize:T.fmd, fontWeight:T.wBold, fontFamily:"inherit" }}>
               {editId ? "Save Changes" : "Add Rider"}
             </button>
             {editId && (
@@ -1905,7 +1917,7 @@ function ManageRegions({ regions, parks, onUpdate }) {
             <span style={fieldLabelCss}>Display Name</span>
             <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Pacific Northwest" style={inputStyle}/>
           </label>
-          <button type="submit" style={{ background:"#0f2a3f", border:`1px solid #38bdf844`, color:T.accent, borderRadius:T.r3, padding:"8px 18px", cursor:"pointer", fontSize:T.fmd, fontWeight:T.wBold, fontFamily:"inherit" }}>Add</button>
+          <button type="submit" style={{ background:"#2d0e0e", border:`1px solid ${T.accent}44`, color:T.accent, borderRadius:T.r3, padding:"8px 18px", cursor:"pointer", fontSize:T.fmd, fontWeight:T.wBold, fontFamily:"inherit" }}>Add</button>
         </form>
         {error && <div style={{ fontSize:T.fsm, color:"#f87171", marginTop:T.s4 }}>{error}</div>}
       </div>
@@ -3741,11 +3753,11 @@ export default function App() {
   // `region: true` = the top-bar region filter applies to this view (it filters
   // the parks shown). Per-view config instead of an ad-hoc allow-list.
   const NAV = [
-    { id:"plan",     icon:"🧭", label:"Plan",     title:"Plan (prototype)", region:false },
-    { id:"log",      icon:"📝", label:"Log",      title:"Log (prototype)",  region:false },
-    { id:"parks",    icon:"🎢", label:"Parks",    region:true  },
-    { id:"credits",  icon:"✓",  label:"Credits",  region:true  },
-    { id:"settings", icon:"⚙",  label:"Settings", region:false },
+    { id:"plan",     Icon:IcoPlan,     label:"Plan",     region:false },
+    { id:"log",      Icon:IcoLog,      label:"Log",      region:false },
+    { id:"parks",    Icon:IcoParks,    label:"Parks",    region:true  },
+    { id:"credits",  Icon:IcoCredits,  label:"Credits",  region:true  },
+    { id:"settings", Icon:IcoSettings, label:"Settings", region:false },
   ];
 
   // "Parks & Coasters" is global-list browsing — on mobile that's redundant
@@ -3769,10 +3781,12 @@ export default function App() {
           The rider pills also collapse into a tap-to-open popover on mobile
           (.ct-rider-pills/.ct-riders-trigger) instead of always taking up
           header space. */}
-      <div style={{ position:"relative", background:"linear-gradient(135deg,#0f172a 0%,#1a1040 100%)", borderBottom:`1px solid ${T.border}`, padding:`${T.s5}px ${T.s7}px` }}>
+      <div style={{ position:"relative", background:`linear-gradient(135deg,${T.panel2} 0%,${T.panel} 100%)`, borderBottom:`1px solid ${T.border}`, padding:`${T.s5}px ${T.s7}px` }}>
         <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap", justifyContent:"space-between" }}>
           <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap", minWidth:0 }}>
-            <span style={{ fontSize:T.fxl, fontWeight:T.wHeavy, letterSpacing:"-0.02em", color:T.ink, flexShrink:0 }}>🎢 Coaster Tracker</span>
+            <span style={{ fontSize:T.fxl, fontWeight:T.wHeavy, letterSpacing:"0.01em", flexShrink:0, lineHeight:1 }}>
+              <span style={{ color:T.ink }}>PARK </span><span style={{ color:"#FFC629" }}>ATTACK</span>
+            </span>
             <span className="ct-topbar-meta" style={{ fontSize:T.fxs, color:T.textFaint, flexShrink:0 }}>{parks.length} parks · {totalCoasters} credits</span>
             <div className="ct-rider-pills" style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>
               {grandTotals.map(r => (
@@ -3784,20 +3798,21 @@ export default function App() {
             </div>
             <button className="ct-riders-trigger" onClick={() => setRidersOpen(o => !o)} style={{ alignItems:"center", gap:T.s2, background:T.panel2, border:`1px solid ${T.border}`, borderRadius:T.pill, padding:"3px 10px", color:T.textLo, fontFamily:"inherit", fontSize:T.fxs, cursor:"pointer" }}>
               <div style={{ display:"flex" }}>
-                {grandTotals.map((r, i) => <span key={r.id} style={{ width:14, height:14, borderRadius:"50%", background:r.color, border:"1.5px solid #0f172a", marginLeft: i===0?0:-5 }}/>)}
+                {grandTotals.map((r, i) => <span key={r.id} style={{ width:14, height:14, borderRadius:"50%", background:r.color, border:`1.5px solid ${T.panel2}`, marginLeft: i===0?0:-5 }}/>)}
               </div>
               Riders {ridersOpen ? "▴" : "▾"}
             </button>
           </div>
           <div className="ct-nav-top" style={{ display:"flex", gap:T.s1, background:T.panel2, borderRadius:T.r4, padding:T.s1, border:`1px solid ${T.border}` }}>
             {NAV.map(m => (
-              <button key={m.id} title={m.title} onClick={() => setView(m.id)} style={{
+              <button key={m.id} title={m.label} onClick={() => setView(m.id)} style={{
+                display:"flex", alignItems:"center", gap:T.s2,
                 padding:`${T.s2}px ${T.s6}px`, borderRadius:T.r3, fontFamily:"inherit", fontSize:T.fbase, fontWeight: view===m.id?T.wBold:400,
                 border: view===m.id?`1px solid ${T.border2}`:"1px solid transparent",
                 background: view===m.id?T.border:"transparent",
                 color: view===m.id?T.ink:T.textLo,
                 cursor:"pointer", transition:"all 0.15s", whiteSpace:"nowrap",
-              }}>{m.icon} {m.label}</button>
+              }}><m.Icon size={13}/> {m.label}</button>
             ))}
           </div>
         </div>
@@ -3842,7 +3857,7 @@ export default function App() {
             <button key={r} onClick={() => setRegion(r)} style={{
               padding:"2px 9px", borderRadius:T.pill, flexShrink:0,
               border: region===r?`1px solid ${T.accent}`:`1px solid ${T.border}`,
-              background: region===r?"#38bdf822":"transparent",
+              background: region===r?`${T.accent}22`:"transparent",
               color: region===r?T.accent:T.textFaint,
               cursor:"pointer", fontSize:T.fxs, fontFamily:"inherit", transition:"all 0.12s", whiteSpace:"nowrap",
             }}>{r==="ALL"?"All Regions":REGIONS[r]}</button>
@@ -3881,7 +3896,7 @@ export default function App() {
             color: view===m.id ? T.ink : T.textFaint,
             cursor:"pointer",
           }}>
-            <span style={{ fontSize:T.flg }}>{m.icon}</span>
+            <m.Icon size={20}/>
             <span style={{ fontSize:T.fxs, fontWeight: view===m.id ? T.wBold : 400 }}>{m.label}</span>
           </button>
         ))}
