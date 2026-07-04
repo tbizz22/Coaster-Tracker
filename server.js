@@ -444,7 +444,125 @@ async function lookupStatsFromRcdb(name, parkName, knownRcdbUrl, isAborted = () 
   const idMatch = String(finalUrl || "").match(/\/(\d+)\.htm/);
   const rcdbId = idMatch ? idMatch[1] : null;
   console.log(`[rcdb-stats] ${mph != null ? "✓" : "·"} "${name}" (${parkName}) — ${mph ?? "?"} mph, ${stats.heightFt ?? "?"} ft, ${stats.yearOpened ?? "?"}, ${stats.manufacturer ?? "?"} ${stats.model ?? ""}`.trim());
-  return { mph, rcdbId, rcdbUrl: rcdbId ? `https://rcdb.com/${rcdbId}.htm` : knownRcdbUrl ?? null, ...stats };
+  // Return html so the image pipeline can reuse the already-fetched page.
+  return { mph, rcdbId, rcdbUrl: rcdbId ? `https://rcdb.com/${rcdbId}.htm` : knownRcdbUrl ?? null, ...stats, _html: html };
+}
+
+// ── Image enrichment ─────────────────────────────────────────────────────────
+// Two-stage pipeline: Wikimedia Commons API first (freely hotlinkable), then
+// RCDB page image as fallback (downloaded + re-hosted in Supabase Storage so
+// we're not leeching RCDB bandwidth). Results carry imageSource and
+// imageConfidence so the UI can flag low-confidence matches for review.
+
+const WIKI_API = "https://commons.wikimedia.org/w/api.php";
+const SUPABASE_URL    = process.env.SUPABASE_URL    || process.env.VITE_SUPABASE_URL    || "";
+const SUPABASE_SVC    = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const COASTER_BUCKET  = "coaster-images";
+
+// Wikimedia Commons: search for a coaster image by name + park, return the
+// best-matching direct image URL and a confidence score.
+async function lookupWikimediaImage(coasterName, parkName) {
+  const query = `${coasterName} ${parkName} roller coaster`;
+  const searchUrl = `${WIKI_API}?action=query&list=search&srsearch=${encodeURIComponent(query)}&srnamespace=6&srlimit=5&format=json&origin=*`;
+  const searchResp = await fetch(searchUrl, { headers: { "User-Agent": "CoasterTracker/1.0 (educational; contact via github)" } });
+  if (!searchResp.ok) return null;
+  const searchData = await searchResp.json();
+  const results = searchData?.query?.search ?? [];
+  if (!results.length) return null;
+
+  // Pick best result: prefer ones whose title contains the coaster name.
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const normCoaster = norm(coasterName);
+  let picked = results[0];
+  let confidence = "low";
+  for (const r of results) {
+    if (norm(r.title).includes(normCoaster)) { picked = r; confidence = "high"; break; }
+  }
+
+  // Resolve to a direct URL via imageinfo API.
+  const title = picked.title;
+  const infoUrl = `${WIKI_API}?action=query&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url&format=json&origin=*`;
+  const infoResp = await fetch(infoUrl, { headers: { "User-Agent": "CoasterTracker/1.0 (educational; contact via github)" } });
+  if (!infoResp.ok) return null;
+  const infoData = await infoResp.json();
+  const pages = Object.values(infoData?.query?.pages ?? {});
+  const url = pages[0]?.imageinfo?.[0]?.url ?? null;
+  if (!url) return null;
+
+  // Only accept image file types we can display.
+  if (!/\.(jpe?g|png|webp|gif)(\?|$)/i.test(url)) return null;
+
+  return { imageUrl: url, imageSource: "wikimedia", imageConfidence: confidence };
+}
+
+// Parse the primary image from an RCDB coaster page HTML.
+function parseRcdbImage(html, baseUrl) {
+  // RCDB coaster pages have a main photo in a <figure> or an <img> with src
+  // matching /pr/<id>.<ext> — the highest-res version is linked via <a>.
+  const linkM = html.match(/<a[^>]+href="(\/pr\/[^"]+\.(jpe?g|png))"[^>]*>/i);
+  if (linkM) return "https://rcdb.com" + linkM[1];
+  const imgM = html.match(/<img[^>]+src="(\/pr\/[^"]+\.(jpe?g|png))"[^>]*/i);
+  if (imgM) return "https://rcdb.com" + imgM[1];
+  return null;
+}
+
+// Download an RCDB image and upload to Supabase Storage. Returns the public CDN URL.
+async function mirrorImageToSupabase(rcdbImageUrl, rcdbId) {
+  if (!SUPABASE_URL || !SUPABASE_SVC) throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set");
+  const ext = (rcdbImageUrl.match(/\.(jpe?g|png)$/i) || ["", "jpg"])[1].toLowerCase().replace("jpeg", "jpg");
+  const path = `rcdb-${rcdbId}.${ext}`;
+
+  // Download from RCDB.
+  const imgResp = await fetch(rcdbImageUrl, { headers: { ...RCDB_HDRS, Referer: "https://rcdb.com/" } });
+  if (!imgResp.ok) throw new Error(`RCDB image download failed: ${imgResp.status}`);
+  const buffer = Buffer.from(await imgResp.arrayBuffer());
+
+  // Upload to Supabase Storage via REST API.
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${COASTER_BUCKET}/${path}`;
+  const uploadResp = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${SUPABASE_SVC}`,
+      "Content-Type": ext === "png" ? "image/png" : "image/jpeg",
+      "x-upsert": "true",
+    },
+    body: buffer,
+  });
+  if (!uploadResp.ok) {
+    const err = await uploadResp.text();
+    throw new Error(`Supabase Storage upload failed: ${uploadResp.status} ${err}`);
+  }
+
+  return `${SUPABASE_URL}/storage/v1/object/public/${COASTER_BUCKET}/${path}`;
+}
+
+// Top-level image lookup: Wikimedia first, RCDB mirror fallback.
+async function lookupImage(name, parkName, rcdbId, rcdbHtml, isAborted = () => false) {
+  // 1. Wikimedia Commons.
+  try {
+    if (isAborted()) return null;
+    const wiki = await lookupWikimediaImage(name, parkName);
+    if (wiki) {
+      console.log(`[images] ✓ wikimedia (${wiki.imageConfidence}) "${name}"`);
+      return wiki;
+    }
+  } catch (e) {
+    console.log(`[images] wikimedia error for "${name}": ${e.message}`);
+  }
+
+  // 2. RCDB image → Supabase Storage mirror.
+  if (!rcdbHtml || !rcdbId) return null;
+  try {
+    if (isAborted()) return null;
+    const rcdbImgUrl = parseRcdbImage(rcdbHtml);
+    if (!rcdbImgUrl) return null;
+    const publicUrl = await mirrorImageToSupabase(rcdbImgUrl, rcdbId);
+    console.log(`[images] ✓ rcdb-mirror "${name}" → ${publicUrl}`);
+    return { imageUrl: publicUrl, imageSource: "rcdb-mirror", imageConfidence: "high" };
+  } catch (e) {
+    console.log(`[images] rcdb-mirror error for "${name}": ${e.message}`);
+    return null;
+  }
 }
 
 let fillSpeedsRunning = false;
@@ -454,18 +572,24 @@ app.post("/api/fill-speeds", async (req, res) => {
   const parks = req.body.parks;
   if (!Array.isArray(parks)) return res.status(400).json({ error: "No parks data provided." });
 
-  // Broader than just speed now: also fills height/year/manufacturer/model/
-  // material/style, all pulled from the same per-coaster RCDB page.
+  // fields: which data elements to fill. Default = all except images (backward compat).
+  const fields = req.body.fields ?? { stats: true, images: false };
+  const fillStats  = !!fields.stats;
+  const fillImages = !!fields.images;
+
+  // Build work list: coasters that are missing any requested field.
   const missing = [];
   for (const park of parks)
     park.coasters.forEach((c, ci) => {
-      const incomplete = c.speedMph == null || c.heightFt == null || c.yearOpened == null || !c.manufacturer;
-      if (incomplete && !c.defunct) {
-        missing.push({ parkId: park.id, parkName: park.name, coasterIdx: ci, name: c.name, rcdbUrl: c.rcdbUrl ?? null });
+      if (c.defunct) return;
+      const needsStats  = fillStats  && (c.speedMph == null || c.heightFt == null || c.yearOpened == null || !c.manufacturer);
+      const needsImages = fillImages && !c.imageUrl;
+      if (needsStats || needsImages) {
+        missing.push({ parkId: park.id, parkName: park.name, coasterIdx: ci, name: c.name, rcdbUrl: c.rcdbUrl ?? null, needsStats, needsImages });
       }
     });
 
-  if (missing.length === 0) return res.json({ results: [], message: "All operating coasters already have full RCDB stats." });
+  if (missing.length === 0) return res.json({ results: [], message: "All operating coasters already have the requested fields." });
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -480,25 +604,50 @@ app.post("/api/fill-speeds", async (req, res) => {
   const send = data => { if (aborted || res.writableEnded) return; try { res.write(`data: ${JSON.stringify(data)}\n\n`); } catch { aborted = true; } };
 
   fillSpeedsRunning = true;
-  console.log(`[fill-speeds] Starting — ${missing.length} coasters with incomplete RCDB stats`);
+  console.log(`[fill-speeds] Starting — ${missing.length} coasters | stats:${fillStats} images:${fillImages}`);
   let found = 0, notFound = 0;
   const results = [];
   try {
-    send({ type: "start", total: missing.length });
+    send({ type: "start", total: missing.length, fields: { stats: fillStats, images: fillImages } });
     for (const item of missing) {
       if (aborted) { console.log("[fill-speeds] Client disconnected — aborting"); break; }
+
       let r = null;
-      try { r = await lookupStatsFromRcdb(item.name, item.parkName, item.rcdbUrl, () => aborted); }
-      catch (e) { console.log(`[fill-speeds] error on "${item.name}": ${e.message}`); }
+      // Always fetch the RCDB page when stats are needed OR when images are
+      // needed (image fallback reuses the already-fetched HTML).
+      if (item.needsStats || (item.needsImages && fillImages)) {
+        try { r = await lookupStatsFromRcdb(item.name, item.parkName, item.rcdbUrl, () => aborted); }
+        catch (e) { console.log(`[fill-speeds] rcdb error on "${item.name}": ${e.message}`); }
+      }
+
+      let imgResult = null;
+      if (item.needsImages && fillImages && !aborted) {
+        try {
+          imgResult = await lookupImage(item.name, item.parkName, r?.rcdbId ?? null, r?._html ?? null, () => aborted);
+        } catch (e) {
+          console.log(`[fill-speeds] image error on "${item.name}": ${e.message}`);
+        }
+      }
+
       const entry = {
-        parkId: item.parkId, parkName: item.parkName, coasterName: item.name,
-        speedMph: r?.mph ?? null, rcdbId: r?.rcdbId ?? null, rcdbUrl: r?.rcdbUrl ?? null,
-        heightFt: r?.heightFt ?? null, yearOpened: r?.yearOpened ?? null,
-        manufacturer: r?.manufacturer ?? null, model: r?.model ?? null,
-        material: r?.material ?? null, style: r?.style ?? null,
+        parkId: item.parkId, parkName: item.parkName, coasterIdx: item.coasterIdx, coasterName: item.name,
+        // Stats fields — null when stats not requested or not found.
+        speedMph:     item.needsStats ? (r?.mph ?? null)          : undefined,
+        rcdbId:       r?.rcdbId ?? null,
+        rcdbUrl:      r?.rcdbUrl ?? null,
+        heightFt:     item.needsStats ? (r?.heightFt ?? null)     : undefined,
+        yearOpened:   item.needsStats ? (r?.yearOpened ?? null)   : undefined,
+        manufacturer: item.needsStats ? (r?.manufacturer ?? null) : undefined,
+        model:        item.needsStats ? (r?.model ?? null)        : undefined,
+        material:     item.needsStats ? (r?.material ?? null)     : undefined,
+        style:        item.needsStats ? (r?.style ?? null)        : undefined,
+        // Image fields — null when images not requested or not found.
+        imageUrl:         item.needsImages ? (imgResult?.imageUrl ?? null)         : undefined,
+        imageSource:      item.needsImages ? (imgResult?.imageSource ?? null)      : undefined,
+        imageConfidence:  item.needsImages ? (imgResult?.imageConfidence ?? null)  : undefined,
       };
       results.push(entry);
-      if (r?.mph != null) found++; else notFound++;
+      if (r?.mph != null || imgResult?.imageUrl) found++; else notFound++;
       send({ type: "result", ...entry, found, notFound, total: missing.length });
     }
     if (!aborted) {

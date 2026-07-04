@@ -2044,6 +2044,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
   // Fill-speeds (RCDB) state
   const [speedsRunning, setSpeedsRunning] = useState(false);
   const [speedsResults, setSpeedsResults] = useState(null);   // { results, found, notFound, total }
+  const [fillFields, setFillFields] = useState({ stats: true, images: false });
 
   // Import delta preview (computed by mergeCoasters before applying)
   const [importPreview, setImportPreview] = useState(null);   // { added, updated, unchanged, coasters, parkName }
@@ -2245,7 +2246,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
   function handleFillSpeeds() {
     setSpeedsRunning(true);
     setSpeedsResults({ results: [], found: 0, notFound: 0, total: 0 });
-    postSSE("/api/fill-speeds", { parks }, msg => {
+    postSSE("/api/fill-speeds", { parks, fields: fillFields }, msg => {
       if (msg.type === "start") {
         setSpeedsResults({ results: [], found: 0, notFound: 0, total: msg.total });
       } else if (msg.type === "result") {
@@ -2262,7 +2263,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
 
   function handleApplySpeeds() {
     const updates = (speedsResults?.results || []).filter(r =>
-      r.speedMph != null || r.heightFt != null || r.yearOpened != null || r.manufacturer || r.model || r.material || r.style
+      r.speedMph != null || r.heightFt != null || r.yearOpened != null || r.manufacturer || r.model || r.material || r.style || r.imageUrl
     );
     if (updates.length) onApplySpeeds(updates);
     setSpeedsResults(null);
@@ -2498,25 +2499,40 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
 
         {/* Fill speed/height/year/manufacturer/model/material/style from RCDB */}
         {(() => {
-          const incomplete = parks.reduce((s, p) => s + p.coasters.filter(c =>
+          const incompleteStats = parks.reduce((s, p) => s + p.coasters.filter(c =>
             !c.defunct && (c.speedMph == null || c.heightFt == null || c.yearOpened == null || !c.manufacturer)
           ).length, 0);
-          if (incomplete === 0 && !speedsResults) return null;
+          const incompleteImages = parks.reduce((s, p) => s + p.coasters.filter(c => !c.defunct && !c.imageUrl).length, 0);
+          const incomplete = (fillFields.stats ? incompleteStats : 0) + (fillFields.images ? incompleteImages : 0);
+          const nothingSelected = !fillFields.stats && !fillFields.images;
+          if (incompleteStats === 0 && incompleteImages === 0 && !speedsResults) return null;
           const found = speedsResults?.results?.filter(r =>
-            r.speedMph != null || r.heightFt != null || r.yearOpened != null || r.manufacturer || r.model || r.material || r.style
+            r.speedMph != null || r.heightFt != null || r.yearOpened != null || r.manufacturer || r.model || r.material || r.style || r.imageUrl
           ) || [];
+          const ChkBox = ({ field, label }) => (
+            <label style={{ display:"flex", alignItems:"center", gap:6, cursor: speedsRunning ? "default" : "pointer", fontSize:T.fsm, color: speedsRunning ? T.textFaint : T.textLo, userSelect:"none" }}>
+              <input type="checkbox" checked={fillFields[field]} disabled={speedsRunning}
+                onChange={e => setFillFields(f => ({ ...f, [field]: e.target.checked }))}
+                style={{ accentColor: T.accent, cursor: speedsRunning ? "default" : "pointer" }}/>
+              {label}
+            </label>
+          );
           return (
             <div style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r5, padding:"14px 18px", maxWidth:720, marginBottom:20 }}>
               <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>
                 <div style={{ flex:1, minWidth:200 }}>
-                  <div style={{ fontSize:T.fmd, fontWeight:T.wBold, color:T.ink }}>⚡ Fill stats from RCDB</div>
+                  <div style={{ fontSize:T.fmd, fontWeight:T.wBold, color:T.ink }}>⚡ Enrich from RCDB & Wikimedia</div>
                   <div style={{ fontSize:T.fsm, color:T.textLo, marginTop:2 }}>
-                    Look up speed, height, opening year, manufacturer, model, material & style on rcdb.com for the <strong style={{color:T.textMid}}>{incomplete}</strong> operating coaster{incomplete!==1?"s":""} missing any of these. ~1s each — this runs a while.
+                    Fill missing data for operating coasters. Choose what to look up, then run.
+                  </div>
+                  <div style={{ display:"flex", gap:T.s5, marginTop:T.s3, flexWrap:"wrap" }}>
+                    <ChkBox field="stats" label={`Stats (${incompleteStats} missing)`}/>
+                    <ChkBox field="images" label={`Images (${incompleteImages} missing)`}/>
                   </div>
                 </div>
-                <button onClick={handleFillSpeeds} disabled={speedsRunning || incomplete===0}
-                  style={{ background: speedsRunning||incomplete===0 ? "transparent" : "#0f2a3f", border:`1px solid ${speedsRunning||incomplete===0 ? T.border2 : "#38bdf844"}`, color: speedsRunning||incomplete===0 ? T.textFaint : T.accent, borderRadius:T.r3, padding:"8px 16px", cursor: speedsRunning||incomplete===0 ? "default" : "pointer", fontSize:T.fbase, fontWeight:T.wBold, fontFamily:"inherit", whiteSpace:"nowrap" }}>
-                  {speedsRunning ? `Looking up ${(speedsResults?.results?.length)||0}/${speedsResults?.total||"…"}…` : "Fill stats"}
+                <button onClick={handleFillSpeeds} disabled={speedsRunning || incomplete === 0 || nothingSelected}
+                  style={{ background: speedsRunning||incomplete===0||nothingSelected ? "transparent" : "#0f2a3f", border:`1px solid ${speedsRunning||incomplete===0||nothingSelected ? T.border2 : "#38bdf844"}`, color: speedsRunning||incomplete===0||nothingSelected ? T.textFaint : T.accent, borderRadius:T.r3, padding:"8px 16px", cursor: speedsRunning||incomplete===0||nothingSelected ? "default" : "pointer", fontSize:T.fbase, fontWeight:T.wBold, fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                  {speedsRunning ? `${(speedsResults?.results?.length)||0}/${speedsResults?.total||"…"}…` : "Run"}
                 </button>
               </div>
 
@@ -2529,10 +2545,12 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                   </div>
                   <div style={{ maxHeight:260, overflowY:"auto", marginBottom:T.s3 }}>
                     {found.map((r,i) => (
-                      <div key={i} style={{ display:"flex", justifyContent:"space-between", gap:T.s3, padding:"2px 0", fontSize:T.fxs, borderBottom:`1px solid ${T.hair}` }}>
-                        <span style={{ color:T.textMid, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.coasterName} <span style={{ color:T.textGhost }}>· {r.parkName}</span></span>
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:T.s3, padding:"3px 0", fontSize:T.fxs, borderBottom:`1px solid ${T.hair}` }}>
+                        <span style={{ color:T.textMid, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                          {r.coasterName} <span style={{ color:T.textGhost }}>· {r.parkName}</span>
+                        </span>
                         <span style={{ flexShrink:0, color:"#4ade80", fontWeight:T.wBold, textAlign:"right" }}>
-                          {[r.speedMph!=null && `${r.speedMph} mph`, r.heightFt!=null && `${r.heightFt} ft`, r.yearOpened, [r.manufacturer,r.model].filter(Boolean).join(" ")].filter(Boolean).join(" · ")}
+                          {[r.speedMph!=null && `${r.speedMph} mph`, r.heightFt!=null && `${r.heightFt} ft`, r.yearOpened, [r.manufacturer,r.model].filter(Boolean).join(" "), r.imageUrl && `📷 ${r.imageSource}${r.imageConfidence==="low" ? " ⚠" : ""}`].filter(Boolean).join(" · ")}
                         </span>
                       </div>
                     ))}
@@ -3659,6 +3677,7 @@ export default function App() {
           if (u.model && !c.model) merged.model = u.model;
           if (u.material && !c.material) merged.material = u.material;
           if (u.style && !c.style) merged.style = u.style;
+          if (u.imageUrl && !c.imageUrl) merged.imageUrl = u.imageUrl;
           return merged;
         });
         return { ...park, coasters };
