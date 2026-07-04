@@ -103,6 +103,11 @@ wrapping. Park/coaster editing is now reachable inline from Plan mode ("✎ Edit
 park", scoped to just that park via `ManageParks`'s new `lockToParkId` prop) —
 Settings ▸ Parks & Coasters is hidden on mobile (desktop keeps it as-is).
 
+**Phase 4a follow-up — mobile nav finalized:** Parks and Credits tabs are now
+hidden from the mobile bottom tab bar entirely (desktop-only views). The mobile
+bottom bar is Plan · Log · Settings only. Navigating to Parks or Credits on a
+<640px viewport redirects to Plan automatically.
+
 **Not yet done:** Phase 4b (PWA manifest/installability), Phase 5
 (sharing/native). A few smaller account-creation UX rough edges remain — see
 the dedicated subsection below.
@@ -332,6 +337,11 @@ does **not** change any counts.
 
 ## Nice-to-haves
 
+- **Add park from mobile.** The current "Add park" flow (Settings ▸ Parks & Coasters)
+  is hidden on mobile (`<640px`) per the Phase 4a decision. Need a mobile-friendly
+  path to create a new park — likely a sheet/drawer triggered from the Plan/Log tab
+  bar or a "+" affordance in the parks list, with a minimal form (name, region, family)
+  and optional RCDB lookup. Coaster seeding via RCDB import should work from mobile too.
 - **Credit history / dates** — moved to *Deferred* (data-model change; pairs with
   the DB migration).
 - *(per-rider "needs companion" → Deferred · export/import → Done)*
