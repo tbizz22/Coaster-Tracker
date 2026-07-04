@@ -3449,7 +3449,7 @@ export default function App() {
   // mostly happens inline from Plan mode, and its sub-nav button is hidden
   // on mobile (see .ct-settings-parks-tab), so landing there by default
   // would show orphaned content with no active tab highlighted.
-  const [settingsTab,  setSettingsTab]  = useState("riders");     // parks | riders | regions | backup | account
+  const [settingsTab,  setSettingsTab]  = useState(null);          // null = mobile menu; section id = content shown
   const [region, setRegion] = useState("ALL");
   const [riders, setRiders] = useState(null);
   const [parks,  setParks]  = useState(null);
@@ -3765,12 +3765,14 @@ export default function App() {
   // with the inline "✎ Edit park" entry point now in Plan mode, so it's
   // hidden there (desktop keeps it; see .ct-settings-parks-tab in index.html).
   const SETTINGS_SUB = [
-    { id:"parks",   label:"🎡 Parks & Coasters", mobileHide:true },
-    { id:"riders",  label:"👤 Riders"  },
-    { id:"regions", label:"🗺 Regions" },
-    { id:"backup",  label:"💾 Backup"  },
-    { id:"account", label:"👤 Account" },
+    { id:"parks",   label:"Parks & Coasters", desc:"Add, edit, and enrich parks and coasters"      },
+    { id:"riders",  label:"Riders",           desc:"Manage riders, heights, and companion flags"   },
+    { id:"regions", label:"Regions",          desc:"Rename region labels used for filtering"       },
+    { id:"backup",  label:"Backup",           desc:"Export or import your full dataset as JSON"    },
+    { id:"account", label:"Account",          desc:"View your account and sign out"               },
   ];
+  // On desktop, treat null settingsTab as "riders" so the content area is never blank.
+  const effectiveTab = (!isMobile && !settingsTab) ? "riders" : settingsTab;
 
   const showRegion = !!NAV.find(n => n.id === view)?.region;
 
@@ -3835,20 +3837,6 @@ export default function App() {
         )}
       </div>
 
-      {/* SETTINGS SUB-NAV */}
-      {view === "settings" && (
-        <div className="ct-hscroll" style={{ background:T.panel, borderBottom:`1px solid ${T.border}`, padding:`0 ${T.s7}px`, display:"flex", gap:2, flexWrap:"nowrap" }}>
-          {SETTINGS_SUB.map(s => (
-            <button key={s.id} className={s.mobileHide ? "ct-settings-parks-tab" : undefined} onClick={() => setSettingsTab(s.id)} style={{
-              padding:`${T.s3}px ${T.s6}px`, background:"none", border:"none",
-              borderBottom: settingsTab===s.id ? `2px solid ${T.accent}` : "2px solid transparent",
-              color: settingsTab===s.id ? T.ink : T.textLo,
-              cursor:"pointer", fontSize:T.fbase, fontWeight: settingsTab===s.id ? T.wBold : 400,
-              fontFamily:"inherit", transition:"all 0.15s", whiteSpace:"nowrap", flexShrink:0,
-            }}>{s.label}</button>
-          ))}
-        </div>
-      )}
 
       {/* REGION FILTER */}
       {showRegion && (
@@ -3878,12 +3866,72 @@ export default function App() {
         {/* Credits tab */}
         {view==="credits" && <CreditTracker riders={riders} ridden={ridden} onToggle={toggleRidden} onSelectAll={selectAll} onClearAll={clearAll} visibleParks={visibleParks} allParks={parks} onOpenCoaster={openCoaster} jump={creditsJump}/>}
 
-        {/* Settings tab — Parks first, then Riders */}
-        {view==="settings" && settingsTab==="parks"  && <ManageParks parks={parks} onAddPark={addPark} onUpdatePark={updatePark} onDeletePark={deletePark} onAddCoaster={addCoaster} onUpdateCoaster={updateCoaster} onDeleteCoaster={deleteCoaster} onApplyHeights={applyHeights} onApplyScrapedAll={applyScrapedHeights} onApplySpeeds={applySpeeds} onMergeImport={mergeImportCoasters}/>}
-        {view==="settings" && settingsTab==="riders"  && <ManageRiders riders={riders} onAdd={addRider} onUpdate={updateRider} onDelete={deleteRider}/>}
-        {view==="settings" && settingsTab==="regions" && <ManageRegions regions={regions} parks={parks} onUpdate={updateRegions}/>}
-        {view==="settings" && settingsTab==="backup"  && <ExportImport buildExport={exportDataset} onImport={importDataset} counts={`${parks.length} parks · ${riders.length} riders`}/>}
-        {view==="settings" && settingsTab==="account" && <AccountSettings/>}
+        {/* Settings — desktop: sidebar + content; mobile: menu list → section */}
+        {view==="settings" && (() => {
+          const settingsContent = (tab) => {
+            if (tab==="parks")   return <ManageParks parks={parks} onAddPark={addPark} onUpdatePark={updatePark} onDeletePark={deletePark} onAddCoaster={addCoaster} onUpdateCoaster={updateCoaster} onDeleteCoaster={deleteCoaster} onApplyHeights={applyHeights} onApplyScrapedAll={applyScrapedHeights} onApplySpeeds={applySpeeds} onMergeImport={mergeImportCoasters}/>;
+            if (tab==="riders")  return <ManageRiders riders={riders} onAdd={addRider} onUpdate={updateRider} onDelete={deleteRider}/>;
+            if (tab==="regions") return <ManageRegions regions={regions} parks={parks} onUpdate={updateRegions}/>;
+            if (tab==="backup")  return <ExportImport buildExport={exportDataset} onImport={importDataset} counts={`${parks.length} parks · ${riders.length} riders`}/>;
+            if (tab==="account") return <AccountSettings/>;
+            return null;
+          };
+
+          if (isMobile) {
+            // Mobile: two-level — menu list → section content
+            if (!settingsTab) {
+              return (
+                <div style={{ flex:1, overflowY:"auto" }}>
+                  <div style={{ padding:`${T.s4}px ${T.s6}px ${T.s2}px`, fontSize:T.fxs, fontWeight:T.wBold, color:T.textFaint, textTransform:"uppercase", letterSpacing:"0.08em" }}>Settings</div>
+                  {SETTINGS_SUB.map((s, i) => (
+                    <button key={s.id} onClick={() => setSettingsTab(s.id)} style={{
+                      display:"flex", alignItems:"center", gap:T.s4, width:"100%",
+                      background:"none", border:"none", borderBottom:`1px solid ${T.border}`,
+                      padding:`${T.s4}px ${T.s6}px`, cursor:"pointer", fontFamily:"inherit", textAlign:"left",
+                    }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:T.fbase, fontWeight:T.wSemi, color:T.ink, marginBottom:2 }}>{s.label}</div>
+                        <div style={{ fontSize:T.fsm, color:T.textLo }}>{s.desc}</div>
+                      </div>
+                      <span style={{ fontSize:T.flg, color:T.textGhost, flexShrink:0 }}>›</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            }
+            const sec = SETTINGS_SUB.find(s => s.id === settingsTab);
+            return (
+              <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:T.s3, padding:`${T.s3}px ${T.s5}px`, background:T.panel, borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
+                  <button onClick={() => setSettingsTab(null)} style={{ background:"none", border:"none", color:T.accent, cursor:"pointer", fontSize:T.fbase, fontFamily:"inherit", padding:`${T.s1}px ${T.s2}px`, marginLeft:-T.s2 }}>← Settings</button>
+                  <span style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>{sec?.label}</span>
+                </div>
+                <div style={{ flex:1, overflowY:"auto" }}>{settingsContent(settingsTab)}</div>
+              </div>
+            );
+          }
+
+          // Desktop: vertical sidebar + content panel
+          return (
+            <div style={{ display:"flex", flex:1, minHeight:0 }}>
+              <div style={{ width:210, flexShrink:0, background:T.panel, borderRight:`1px solid ${T.border}`, overflowY:"auto", padding:`${T.s5}px 0` }}>
+                <div style={{ padding:`0 ${T.s5}px ${T.s3}px`, fontSize:T.fxs, fontWeight:T.wBold, color:T.textFaint, textTransform:"uppercase", letterSpacing:"0.08em" }}>Settings</div>
+                {SETTINGS_SUB.map(s => (
+                  <button key={s.id} onClick={() => setSettingsTab(s.id)} style={{
+                    display:"flex", alignItems:"center", gap:T.s3, width:"100%",
+                    background: effectiveTab===s.id ? T.border : "none",
+                    border:"none", borderLeft: effectiveTab===s.id ? `2px solid ${T.accent}` : "2px solid transparent",
+                    padding:`${T.s3}px ${T.s5}px`, cursor:"pointer", fontFamily:"inherit",
+                    color: effectiveTab===s.id ? T.ink : T.textLo,
+                    fontSize:T.fbase, fontWeight: effectiveTab===s.id ? T.wBold : 400,
+                    transition:"all 0.12s", textAlign:"left",
+                  }}>{s.label}</button>
+                ))}
+              </div>
+              <div style={{ flex:1, overflowY:"auto" }}>{settingsContent(effectiveTab)}</div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* BOTTOM TAB BAR — mobile only (.ct-nav-bottom is display:none above
