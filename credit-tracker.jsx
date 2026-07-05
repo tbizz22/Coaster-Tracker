@@ -3839,25 +3839,6 @@ export default function App() {
     }
   }, []);
 
-  // Apply batch-scrape results: [{parkId, coasterName, min, minAccompanied}].
-  // Name-keyed (cross-park indexes are fragile); stamps heightSource:"official".
-  const applyScrapedHeights = useCallback(updates => {
-    const norm = normCoasterName;   // punctuation/trademark-insensitive name match
-    setParks(prev => {
-      const next = prev.map(park => {
-        const ups = updates.filter(u => u.parkId === park.id);
-        if (!ups.length) return park;
-        const coasters = park.coasters.map(c => {
-          const u = ups.find(u => norm(u.coasterName) === norm(c.name));
-          return u ? { ...c, min: u.min, minAccompanied: u.minAccompanied, heightSource: "official" } : c;
-        });
-        return { ...park, coasters };
-      });
-      saveParks(next);
-      return next;
-    });
-  }, []);
-
   // Replace a park's coaster list with the merged result of a delta import.
   // `mergeCoasters` already preserved existing names (so credit keys stay valid)
   // and only filled empty fields; here we just persist the new list.
@@ -4062,7 +4043,7 @@ export default function App() {
       {/* CONTENT */}
       <div className="ct-content-area" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0, overflowY:"auto" }}>
         {/* Plan/Log mode — prototype, additive alongside the existing tabs */}
-        {view==="plan" && <PlanMode parks={parks} riders={riders} parkEditProps={{ onAddPark:addPark, onUpdatePark:updatePark, onDeletePark:deletePark, onAddCoaster:addCoaster, onUpdateCoaster:updateCoaster, onDeleteCoaster:deleteCoaster, onApplyHeights:applyHeights, onApplyScrapedAll:applyScrapedHeights, onApplySpeeds:applySpeeds, onMergeImport:mergeImportCoasters }}/>}
+        {view==="plan" && <PlanMode parks={parks} riders={riders} parkEditProps={{ onAddPark:addPark, onUpdatePark:updatePark, onDeletePark:deletePark, onAddCoaster:addCoaster, onUpdateCoaster:updateCoaster, onDeleteCoaster:deleteCoaster, onApplyHeights:applyHeights, onApplySpeeds:applySpeeds, onMergeImport:mergeImportCoasters }}/>}
         {view==="log" && <LogMode parks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden}/>}
 
         {/* Parks tab — unified left nav with Explorer / Height sub-views */}
@@ -4076,7 +4057,7 @@ export default function App() {
         {/* Settings — desktop: sidebar + content; mobile: menu list → section */}
         {view==="settings" && (() => {
           const settingsContent = (tab) => {
-            if (tab==="general") return <GeneralSettings parks={parks} onApplyHeights={applyHeights} onApplyScrapedAll={applyScrapedHeights} onApplySpeeds={applySpeeds}/>;
+            if (tab==="general") return <GeneralSettings parks={parks} onApplyHeights={applyHeights} onApplySpeeds={applySpeeds}/>;
             if (tab==="parks")   return <ManageParks parks={parks} onAddPark={addPark} onUpdatePark={updatePark} onDeletePark={deletePark} onAddCoaster={addCoaster} onUpdateCoaster={updateCoaster} onDeleteCoaster={deleteCoaster} onMergeImport={mergeImportCoasters}/>;
             if (tab==="riders")  return <ManageRiders riders={riders} onAdd={addRider} onUpdate={updateRider} onDelete={deleteRider}/>;
             if (tab==="regions") return <ManageRegions regions={regions} parks={parks} onUpdate={updateRegions}/>;

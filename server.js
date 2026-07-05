@@ -270,24 +270,36 @@ async function lookupHeightFromWikipedia(coasterName, isAborted = () => false) {
   return null;
 }
 
-// ── Fill missing heights via Server-Sent Events (streams results as they arrive) ──
+// ── Fill/reconcile heights via Server-Sent Events (streams results as they arrive) ──
+// One job now checks every available source instead of leaving the choice to the
+// user: for parks with an official height-chart URL, scrape it and trust it over
+// anything else (it also catches stale values on coasters that already have a
+// height); everything still missing afterward — and anything at a park with no
+// official source — falls back to Wikipedia.
 app.post("/api/fill-heights", async (req, res) => {
-  if (fillHeightsRunning) {
-    return res.status(409).json({ error: "A fill-heights job is already running. Please wait." });
+  if (fillHeightsRunning || scrapeRunning) {
+    return res.status(409).json({ error: "A height-lookup job is already running. Please wait." });
   }
 
   const parks = req.body.parks;
   if (!Array.isArray(parks)) return res.status(400).json({ error: "No parks data provided." });
 
-  const missing = [];
+  // Work list: coasters missing a height everywhere, plus — at parks with an
+  // official source — every coaster, so the scrape can also correct stale values.
+  const work = [];
   for (const park of parks) {
     for (let ci = 0; ci < park.coasters.length; ci++) {
       const c = park.coasters[ci];
-      if (c.min == null) missing.push({ parkId: park.id, parkName: park.name, coasterIdx: ci, name: c.name, scale: c.scale });
+      if (c.min == null || park.officialUrl) {
+        work.push({
+          parkId: park.id, parkName: park.name, coasterIdx: ci, name: c.name, scale: c.scale,
+          min: c.min ?? null, minAccompanied: c.minAccompanied ?? null, officialUrl: park.officialUrl || null,
+        });
+      }
     }
   }
 
-  if (missing.length === 0) {
+  if (work.length === 0) {
     return res.json({ results: [], message: "All coasters already have height data." });
   }
 
@@ -311,42 +323,71 @@ app.post("/api/fill-heights", async (req, res) => {
   };
 
   fillHeightsRunning = true;
-  console.log(`[fill-heights] Starting — ${missing.length} coasters to look up`);
+  scrapeRunning = true; // fill-heights now drives the same scraper — serialize with the manual per-park scrape
+  console.log(`[fill-heights] Starting — ${work.length} coasters to check`);
 
   let found = 0, notFound = 0;
   const results = [];
 
   try {
-    send({ type: "start", total: missing.length });
+    send({ type: "start", total: work.length });
 
-    for (const item of missing) {
+    // Scrape each distinct official-source park once up front, indexed by coasterIdx.
+    const officialByPark = new Map();
+    const officialParkIds = [...new Set(work.filter(w => w.officialUrl).map(w => w.parkId))];
+    for (const parkId of officialParkIds) {
+      if (aborted) break;
+      const park = parks.find(p => p.id === parkId);
+      try {
+        const scraped = await scrapeParkHeights(park.officialUrl);
+        const { matched } = matchScrapeToPark(park, scraped);
+        officialByPark.set(parkId, new Map(matched.map(m => [m.coasterIdx, m])));
+      } catch (err) {
+        console.log(`[fill-heights] Official scrape failed for ${park.name}: ${err.message}`);
+        officialByPark.set(parkId, new Map());
+      }
+    }
+
+    for (const item of work) {
       if (aborted) { console.log("[fill-heights] Client disconnected — aborting"); break; }
 
-      const result = await lookupHeightFromWikipedia(item.name, () => aborted);
+      const officialMatch = officialByPark.get(item.parkId)?.get(item.coasterIdx);
+      let height = item.min, minAccompanied = item.minAccompanied, source = "Current", fuzzy = false, changed = false;
+
+      if (officialMatch && officialMatch.changed) {
+        height = officialMatch.scraped.min;
+        minAccompanied = officialMatch.scraped.minAccompanied;
+        source = "Official";
+        fuzzy = officialMatch.fuzzy;
+        changed = true;
+      } else if (officialMatch) {
+        source = "Official"; // already agrees with the current value — nothing to change
+      } else if (item.min == null) {
+        const result = await lookupHeightFromWikipedia(item.name, () => aborted);
+        if (result?.height != null) { height = result.height; source = "Wikipedia"; changed = true; }
+        else source = "Not found";
+      }
+
       const entry = {
-        parkId:      item.parkId,
-        parkName:    item.parkName,
-        coasterIdx:  item.coasterIdx,
-        coasterName: item.name,
-        height:      result?.height ?? null,
-        source:      result?.source ?? "Not found",
-        scale:       item.scale ?? null,
+        parkId: item.parkId, parkName: item.parkName, coasterIdx: item.coasterIdx, coasterName: item.name,
+        currentMin: item.min, height, minAccompanied, source, fuzzy, changed, scale: item.scale ?? null,
       };
       results.push(entry);
-      if (result?.height) found++; else notFound++;
-      send({ type: "result", ...entry, found, notFound, total: missing.length });
+      if (changed) found++; else if (height == null) notFound++;
+      send({ type: "result", ...entry, found, notFound, total: work.length });
     }
 
     if (!aborted) {
-      console.log(`[fill-heights] Done — found ${found}/${missing.length}`);
-      send({ type: "done", results, found, notFound, total: missing.length });
+      console.log(`[fill-heights] Done — ${found} updated of ${work.length} checked`);
+      send({ type: "done", results, found, notFound, total: work.length });
     }
   } catch (err) {
     console.log(`[fill-heights] Error: ${err.message}`);
     send({ type: "error", message: err.message });
   } finally {
-    // Always release the lock, no matter how the request ended
+    // Always release the locks, no matter how the request ended
     fillHeightsRunning = false;
+    scrapeRunning = false;
     if (!res.writableEnded) res.end();
   }
 });
@@ -780,72 +821,6 @@ function matchScrapeToPark(park, scraped) {
   const unmatchedExisting = park.coasters.filter((c, idx) => !matchedIdx.has(idx)).map(c => c.name);
   return { matched, unmatchedScraped, unmatchedExisting };
 }
-
-// ── Batch scrape: every park with an officialUrl, streamed (SSE) ──────────────
-// Like fill-heights, this streams per-park progress so the client can show a
-// combined review panel. It does NOT write — the client applies approved updates.
-// Shares the `scrapeRunning` lock with the single-park scrape (one browser at a time).
-app.post("/api/scrape-all-heights", async (req, res) => {
-  if (scrapeRunning) return res.status(409).json({ error: "A scrape job is already running. Please wait." });
-
-  const parks = req.body.parks;
-  if (!Array.isArray(parks)) return res.status(400).json({ error: "No parks data provided." });
-
-  const targets = parks.filter(p => p.officialUrl);
-  if (targets.length === 0) {
-    return res.json({ results: [], message: "No parks have an official height-chart URL set." });
-  }
-
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
-
-  let aborted = false;
-  // res (not req!) — req's stream closes as soon as the POST body is fully
-  // read, long before the client actually disconnects; res only closes when
-  // the underlying connection really does.
-  res.on("close", () => { aborted = true; });
-  const send = data => {
-    if (aborted || res.writableEnded) return;
-    try { res.write(`data: ${JSON.stringify(data)}\n\n`); } catch { aborted = true; }
-  };
-
-  scrapeRunning = true;
-  console.log(`[scrape-all] Starting — ${targets.length} parks with an officialUrl`);
-  let parksScraped = 0, parksFailed = 0, totalChanged = 0;
-
-  try {
-    send({ type: "start", totalParks: targets.length });
-    for (const park of targets) {
-      if (aborted) { console.log("[scrape-all] Client disconnected — aborting"); break; }
-      try {
-        const scraped = await scrapeParkHeights(park.officialUrl);
-        const { matched, unmatchedScraped, unmatchedExisting } = matchScrapeToPark(park, scraped);
-        const changed = matched.filter(m => m.changed);
-        parksScraped++; totalChanged += changed.length;
-        console.log(`[scrape-all] ${park.name}: ${scraped.length} scraped, ${matched.length} matched, ${changed.length} changed`);
-        send({ type: "park", parkId: park.id, parkName: park.name, scrapedCount: scraped.length,
-               matched, changed, unmatchedScraped, unmatchedExisting, done: parksScraped + parksFailed, totalParks: targets.length });
-      } catch (err) {
-        parksFailed++;
-        console.log(`[scrape-all] ${park.name} failed: ${err.message}`);
-        send({ type: "park", parkId: park.id, parkName: park.name, error: err.message,
-               done: parksScraped + parksFailed, totalParks: targets.length });
-      }
-    }
-    if (!aborted) {
-      console.log(`[scrape-all] Done — ${parksScraped} scraped, ${parksFailed} failed, ${totalChanged} changes proposed`);
-      send({ type: "done", parksScraped, parksFailed, totalChanged, totalParks: targets.length });
-    }
-  } catch (err) {
-    console.log(`[scrape-all] Error: ${err.message}`);
-    send({ type: "error", message: err.message });
-  } finally {
-    scrapeRunning = false;
-    if (!res.writableEnded) res.end();
-  }
-});
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`API server on http://localhost:${PORT}`));

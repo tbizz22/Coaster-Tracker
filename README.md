@@ -119,9 +119,8 @@ funnels through `normalizeCoaster()` so records share one schema:
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/lookup-coasters` | RCDB park-page scrape (import coasters) |
-| `POST /api/fill-heights` (SSE, body `{ parks }`) | best-effort height fill from Wikipedia |
-| `POST /api/scrape-heights` (body `{ park }`) | headless-browser scrape of a park's official attractions page → authoritative alone/accompanied heights (review & apply in the UI) |
-| `POST /api/scrape-all-heights` (SSE, body `{ parks }`) | batch scrape — runs the official-height scrape over every park with an `officialUrl`, streaming per-park results to a combined review panel |
+| `POST /api/fill-heights` (SSE, body `{ parks }`) | checks every available height source in one pass — scrapes each park's official attractions page first (authoritative, also catches stale values), then falls back to Wikipedia for anything still missing; streams proposed updates for review & apply |
+| `POST /api/scrape-heights` (body `{ park }`) | headless-browser scrape of a single park's official attractions page — used by the per-park "Scrape official heights" button in park settings |
 | `POST /api/fill-speeds` (SSE, body `{ parks }`) | resolve speed/height/year/manufacturer/model/material/style from each coaster's own rcdb.com page (prefers the known `rcdbUrl`, else quick-search + park-name disambiguation; review & apply) |
 
 The SSE endpoints are POST (parks data has to go somewhere), so the client
