@@ -15,14 +15,14 @@ const T = {
   r1:4, r2:6, r3:8, r4:10, r5:12, pill:999,
   // font weights
   wMed:500, wSemi:600, wBold:700, wHeavy:800,
-  // color roles — Park Attack brand palette (dark theme)
+  // color roles — Coaster Attack brand palette (dark theme)
   bg:"#0E1016", panel:"#131820", panel2:"#1C2234", zebra:"#0A0F18",
   border:"#2A3042", border2:"#3D4A5E", hair:"#1C2234",
   ink:"#F5F6FA", text:"#E8EDF5", textMid:"#94a3b8", textLo:"#64748b",
   textFaint:"#475569", textGhost:"#2A3042", accent:"#E8362E",
 };
 
-// ── Park Attack UI icon components ────────────────────────────────────────
+// ── Coaster Attack UI icon components ─────────────────────────────────────
 // Line icons from the brand asset package; stroke="currentColor" so they
 // inherit color from the parent element (active/inactive states via CSS).
 const _Ico = ({size=16, children}) => (
@@ -4038,7 +4038,7 @@ export default function App() {
         <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap", justifyContent:"space-between" }}>
           <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap", minWidth:0 }}>
             <span style={{ fontSize:T.fxl, fontWeight:T.wHeavy, letterSpacing:"0.01em", flexShrink:0, lineHeight:1 }}>
-              <span style={{ color:T.ink }}>PARK </span><span style={{ color:"#FFC629" }}>ATTACK</span>
+              <span style={{ color:T.ink }}>COASTER </span><span style={{ color:"#FFC629" }}>ATTACK</span>
             </span>
             <span className="ct-topbar-meta" style={{ fontSize:T.fxs, color:T.textFaint, flexShrink:0 }}>{parks.length} parks · {totalCoasters} credits</span>
             <div className="ct-rider-pills" style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>

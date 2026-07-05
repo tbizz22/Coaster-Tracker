@@ -1,4 +1,4 @@
-PARK ATTACK — BRAND & ASSET PACKAGE (v1.0, Direction 1a)
+COASTER ATTACK — BRAND & ASSET PACKAGE (v1.0, Direction 1a)
 ========================================================
 
 COLORS
