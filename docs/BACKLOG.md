@@ -37,86 +37,15 @@ See the plan file for the proposed schema, critical files, and verification step
 **Prerequisite for good mobile:** the "Visual design system & responsive breakpoints"
 item below.
 
-**Done (Phases 0–1, verified live):** schema + RLS migration pushed to the Supabase
-project; `credit-tracker.jsx` persistence rewritten to talk to Supabase directly
-(`loadHouseholdData`/`saveRiders`/`saveParks`/`saveSettings`/`saveRiderCredits`); a
-minimal email/password `AuthGate` wraps `<App/>` (`src/AuthGate.jsx`); the real
-`data/*.json` (5 riders, 23 parks, 254 coasters, 342 credits) imported into the
-household via `scripts/import-json-to-supabase.mjs`; `server.js` trimmed to a
-stateless scraper service — `fill-heights`/`fill-speeds`/`scrape-heights`/
-`scrape-all-heights` no longer read `data/parks.json` off disk, they take the
-caller's current parks data via POST body (client drives the SSE ones with a new
-`postSSE()` fetch+stream helper since `EventSource` can't POST). End-to-end verified
-in-browser: park/coaster data loads from Supabase, a credit toggle persisted through
-a reload, and the batch-scrape SSE stream runs to completion (`start` → per-park
-`park` results with real scraped heights → `done`). One real bug caught and fixed in
-this pass: the SSE endpoints tracked client-disconnect via `req.on("close")`, which
-fires as soon as Express finishes reading the POST body — not when the client
-actually disconnects — so it flipped `aborted` true right after the first message and
-silently killed the stream. Switched to `res.on("close")`. Dead code removed:
-`DEFAULT_PARKS`/`DEFAULT_RIDERS` hand-seed fallback data (no longer reachable now
-that load always goes through Supabase).
-
-**Phase 2 security pass — done (verified live):** signed into a second real account
-in-browser (a fresh signup, distinct from the household above) and confirmed the app
-shows **0 parks · 0 credits** — none of the first household's 23 parks / 250 credits
-were visible, and `handle_new_user()` gave the new account its own empty household as
-designed. RLS is correctly isolating households. Also added Settings ▸ Account (signed-
-in email + Sign out button, `AccountSettings` in `credit-tracker.jsx`) — closes the
-"no account/session management UI" gap below; sign-out verified live (returns to the
-`AuthGate` sign-in screen via its `onAuthStateChange` listener).
-
-**Phase 3 (deploy) — done, live in production:** SPA deployed to Vercel
-(`https://coaster-tracker-gray.vercel.app`), scraper service deployed to Render as a
-Docker web service (`https://coaster-tracker.onrender.com`, built from the repo's
-`Dockerfile` — Playwright's own base image, so headless Chromium for
-`scrape-heights.js` is already present). `credit-tracker.jsx`'s `apiGet`/`postSSE`/
-scrape-heights fetch all go through `API_BASE` (`import.meta.env.VITE_SCRAPER_URL`,
-empty in dev so the Vite proxy still works); `server.js` got `cors` (gated by
-`FRONTEND_URL`) and reads `PORT` from the environment instead of hardcoding 3001.
-Verified live end-to-end: the deployed bundle has the real Supabase URL and the
-Render scraper URL baked in; Render's CORS preflight correctly returns
-`access-control-allow-origin: https://coaster-tracker-gray.vercel.app` for that
-origin and nothing for an unrelated test origin (scoped, not wide-open). The repo
-is on GitHub (`tbizz22/Coaster-Tracker`) — checked the pushed commit for secrets/PII
-before confirming it was safe: no `.env`, no `data/*.json` (real family data), no
-Supabase keys or tokens anywhere in tracked files. One real bug found and fixed
-during this rollout: `VITE_SCRAPER_URL` on Vercel was initially set to a placeholder
-hostname from the setup instructions (`coaster-tracker-scraper.onrender.com`, which
-doesn't exist) instead of the real deployed one — surfaced in the browser as a CORS
-error on the preflight, but the actual cause was Render's edge returning a plain 404
-(`X-Render-Routing: no-server`) for an unregistered hostname, not a CORS
-misconfiguration. Fixed by correcting the env var to the real Render URL and
-redeploying; batch scrape confirmed working live afterward.
-
-**Phase 4a (mobile-style UI redesign) — done, live in production.** Ahead of
-PWA installability, the app gained a purpose-built mobile experience (desktop
-stays as the dense, data-rich layout): a new **Plan mode** (per-park "where
-should we go" view — every rider's avatar always shown, greyed when too short,
-amber "A"-badged when accompanied-only, collapsed to a single effective height
-threshold instead of separate min/accompanied numbers) and **Log mode** (the
-same view, but tapping a rider's avatar toggles that credit — the post-visit
-counterpart to Plan). Below 640px the top tab strip becomes a fixed LogRide-
-style bottom tab bar, the always-visible rider pills collapse into a tap-to-
-open popover, and Settings sub-nav/region filter scroll horizontally instead of
-wrapping. Park/coaster editing is now reachable inline from Plan mode ("✎ Edit
-park", scoped to just that park via `ManageParks`'s new `lockToParkId` prop) —
-Settings ▸ Parks & Coasters is hidden on mobile (desktop keeps it as-is).
-
-**Phase 4a follow-up — mobile nav finalized:** Parks and Credits tabs are now
-hidden from the mobile bottom tab bar entirely (desktop-only views). The mobile
-bottom bar is Plan · Log · Settings only. Navigating to Parks or Credits on a
-<640px viewport redirects to Plan automatically.
+Phases 0–4a (Supabase migration, auth/RLS, production deploy to Vercel+Render, and
+the mobile Plan/Log redesign) are done and verified live — full detail moved to the
+Done archive at the bottom ("Web platform: Phases 0–4a"). The old `data/*.json`
+pre-migration snapshot (and its `.backup-*` files) has been deleted — Supabase has
+been the system of record with no issues.
 
 **Not yet done:** Phase 4b (PWA manifest/installability), Phase 5
 (sharing/native). A few smaller account-creation UX rough edges remain — see
 the dedicated subsection below.
-
-**Cleanup follow-up:** `data/*.json` (riders/parks/settings/credits + the
-`.backup-*` files) are now inert — nothing reads or writes them anymore. Left in
-place as a known-good snapshot of the pre-migration state rather than deleted
-outright. Once Supabase has been the system of record for a while with no
-surprises, these can be deleted (or moved out of the repo into a one-time archive).
 
 ### Clean up the account-creation experience
 
@@ -156,56 +85,47 @@ not fine to ship as-is:
 These were reviewed during the backlog sweep and intentionally left for later;
 each is blocked on something this codebase can't settle on its own.
 
-- ~~**Batch "scrape all parks"**~~ **Done** (see Done section) — `/api/scrape-all-heights`
-  SSE endpoint streams every `officialUrl` park; Settings ▸ Parks shows a combined
-  review panel (per-park grouped changes + failures) with one "Apply all N updates"
-  button. **Run-and-verified:** the 3 parks that had URLs at the time scraped clean
-  (Canada's Wonderland + SF Great Adventure already had their heights; Hersheypark's
-  URL was wrong at the time → reported as a failure, since fixed — see the next item).
-- ~~**`officialUrl` coverage — mostly done for SF/CF; remaining = non-SF/CF parks.**~~
-  **Done** (see Done section) — all 23 parks now have an `officialUrl`. SF/Cedar
-  Fair parks (12) point at their `sixflags.com` attractions page (scrapable); the
-  9 non-SF/CF parks now point at the real park-specific height/ride pages found via
-  web search, using the `family` field to identify and fix the wrong one
-  (Hersheypark's stray `sixflags.com` URL). These 9 aren't scrapable (the Algolia
-  scraper only reads SF/Cedar Fair pages) but the "📏 Official height chart" link
-  in Parks detail now points somewhere real for manual lookup — see the non-Six-
-  Flags accompanied-heights item below for the still-open scraping gap.
-- ~~**Speeds.**~~ **Done** — `speedMph` fills from RCDB via `POST /api/fill-speeds`
-  (quick-search + park-name disambiguation; see `server.js`/`lookupSpeedFromRcdb`).
-  See the new **"Expand coaster data model: structure height, year, manufacturer,
-  model"** item below for the rest of RCDB's physical stats, which are still
-  unpopulated.
 - **Accompanied heights for non-Six-Flags parks** (Knoebels, Hersheypark,
   Universal, …). *Deferred:* the Playwright scraper only covers Six Flags / Cedar
-  Fair pages; no source for the others — manual entry only.
-- ~~**Split coaster `type` into `manufacturer` + `model`.**~~ **Done** (see Done
-  section) — schema migration + data backfill + full UI/scraper-mapping update.
-- ~~**Restore construction material/track-layout as its own fields.**~~ **Done**
-  (see Done section) — `material` (Steel/Wood/Hybrid) + `style` (Sit Down/
-  Inverted/Suspended/…), the data the park-listing page actually has, kept as a
-  separate axis from manufacturer/model rather than collapsed back into one.
-- ~~**Expand coaster data model: structure height, year (opened).**~~ **Done**
-  (see Done section) — `heightFt`/`yearOpened` added, real manufacturer/model
-  now sourced from each coaster's own RCDB page (not the park-listing page),
-  and the whole RCDB stats fetch re-run live against all 254 coasters.
-- ~~**By-rider height column should show the accompanied height (`X"*`).**~~
-  **Implemented + largely populated.** The badge shows `minAccompanied ?? min` with a
-  `*` for the with-adult threshold. After the batch scrape, **39** coasters across 13
-  parks carry `minAccompanied` (up from 8) — every SF/Cedar Fair park is now covered.
-  The only gap left is the **non-SF/CF parks** (Universal, Knoebels, Hersheypark, …),
-  which the scraper can't read — see the `officialUrl` item above + the non-Six-Flags
-  accompanied-heights item below.
-- **Per-rider "needs companion" default** (also in Nice-to-haves). *Deferred:*
-  needs a product decision on what it does to counts — accompanied (`✓*`) rides
-  currently count as eligible for everyone; whether a flagged rider should treat
-  them differently is the open question. Ask the owner before building.
+  Fair pages; no source for the others — manual entry only. (Coverage for SF/CF
+  parks is done — see Done archive: "Batch scrape all parks", "officialUrl coverage",
+  "By-rider accompanied-height column".)
 - **Credit history / dates** — record *when* / *how many times* a coaster was
   ridden instead of a boolean. *Deferred:* a data-model change best done alongside
   the web-platform DB migration (credits become FK rows there anyway).
 - **Real tile map (optional upgrade).** Swap the offline SVG for Leaflet/MapLibre
   for pan/zoom + street context. *Deferred:* explicitly optional and conflicts
   with the offline-first goal (adds deps + network tiles).
+- **Shared/global coaster data across households.** Right now every household's
+  `coasters` rows are private, per-household copies (RLS-scoped, no cross-household
+  read) — so 23 households tracking Six Flags Great Adventure each hold their own
+  duplicate row for Nitro, independently scraped/entered. Idea: promote park/coaster
+  *reference* data (name, manufacturer, model, material, style, heightFt, yearOpened,
+  speedMph, rcdbId/rcdbUrl, officialUrl) to a household-independent global table that
+  every account reads from, while household-specific state (credits, per-rider
+  overrides, hand-edited fields) stays local. **Decided: worth scoping now** — next
+  step is a design/RLS pass answering the open questions below before migration work
+  starts:
+  - **Write access.** Global rows can't be household-writable (any user could vandalize
+    every other household's data) — likely needs a separate elevated role (service-role
+    script, or an admin-only RLS policy) that only the scrapers/import scripts use, not
+    arbitrary authenticated users.
+  - **Overwrite vs. override semantics.** A household must be able to locally override a
+    global field (e.g. a hand-corrected height) without that edit (a) leaking to other
+    households or (b) getting silently clobbered the next time the global row is
+    refreshed by a re-scrape. Likely needs an explicit per-field "is this overridden
+    locally" flag (similar in spirit to the existing `mergeCoasters` never-clobber
+    logic) rather than a flat global-vs-local table split.
+  - **Schema shape.** Options: (a) one global `coasters` table + a thin per-household
+    `coaster_overrides` table joined at read time, or (b) keep per-household `coasters`
+    rows but seed/refresh them from a global reference table on import/scrape (closer
+    to today's model, simpler RLS, but back to per-household duplication). Needs a
+    decision before migration work starts.
+  - **RLS implications.** The global table would need read access for all authenticated
+    users but RLS write-denial for everyone except the elevated role — different shape
+    from every other table in this schema (all currently scoped strictly to
+    `household_id`), so worth a dedicated security review of the new policies before
+    shipping, not just reusing the existing household-scoped pattern.
 
 ## Visual design system & responsive breakpoints
 
@@ -227,15 +147,6 @@ mirrored CSS variables, shared `labelCss` / `fieldLabelCss`, the responsive shel
 - **Light/extra theming** is out of scope (decision: refine the existing dark
   theme).
 
-## Data tables: dedicated accompanied-height column
-
-~~Requested revision~~ **Done** (see Done section). Every wide data table now has a
-dedicated **"w/ adult"** column next to `Min`, rendering the `minAccompanied` value
-in an amber `AccBadge` (or a muted `—`). Added to Parks detail (Overview + rider
-lens), the Credits By-park grid, and the By-rider drawers (which gained a column
-header and now show alone + accompanied as two explicit columns instead of the
-single `X"*` badge). The per-rider eligibility tick stays as the eligibility signal.
-
 ## Desktop park-detail table: redesign (user feedback)
 
 User feedback on the current Parks ▸ detail table (the per-rider stat-chip row +
@@ -252,88 +163,19 @@ data table), captured for the desktop "hardened, more data/insights" pass —
   "Manufacturer Model" free-text column reads as one long string. Wants its own
   dedicated column (separate from name), and manufacturer names should always use
   common industry abbreviations (B&M, RMC, GCI, PTC, etc.) instead of full names.
-- **Add a ride photo/thumbnail**, ideally without self-hosting images. Likely
-  approach: extend the existing Wikipedia lookup (already used for height
-  fill-ins) to also pull the infobox image URL and store just the URL — Wikimedia
-  Commons images are freely licensed and safe to hotlink with attribution. Falls
-  back to a placeholder when a coaster has no Wikipedia image. (RCDB also has
-  photos, but scraping/hotlinking those is more ToS-questionable than Wikipedia's
-  API.)
+- **Ride photo/thumbnail — extend to Credits view.** `imageUrl` thumbnails are done
+  in Parks detail + `CoasterModal` (see Done archive), but the desktop **Credits**
+  view (By-park / By-rider pivot) still shows text-only rows. Add the same
+  thumbnail treatment there now that `imageUrl` is populated for most coasters.
 - **Legend row should be a hover/tooltip on desktop, not always-on screen.** The
   "✓ Can ride · ✓\* With an adult · ✗ Too short · ? Height unknown" key currently
   sits permanently on the page; move it behind a small "ⓘ" affordance instead.
 
-## Clean up the minimum-rider-height experience
-
-**Done.** Vocabulary + legend (single `RIDE_STATUS` source of truth), the
-backlog-sweep items (unknown-height nudge, Min/Acc validation, unified
-`HEIGHT_BANDS`), the dedicated accompanied-height column (above), and the
-**per-rider "needs companion" flag** (informational, per the agreed
-counting-semantics decision — `✓*` rides still count as eligible). The flag is a
-checkbox in Settings ▸ Riders that surfaces a "needs an adult for ✓*" reminder on
-the rider's By-rider strip, the Parks rider-lens subtitle, and the rider list — it
-does **not** change any counts.
-
 ## IA / UX (from INFORMATION-ARCHITECTURE.md §8)
 
-- ~~**Coaster detail modal (view ▸ edit).**~~ **Done** (see Done section) — clickable
-  coaster names in Parks detail, the By-park grid, and the By-rider drawers open a
-  centered `CoasterModal` showing full details + provenance, with a toggle into an
-  edit form that saves through the shared `updateCoaster` + `validateHeights`.
-
-- ~~**Coaster import = delta merge, not duplicate-append.**~~ **Done** (see Done
-  section). The lookup import now runs `mergeCoasters(existing, incoming)` (match by
-  normalized name, fill only empty fields, never clobber, append only truly-new),
-  shows a **"N new · M merged · K unchanged" review panel** before applying, and
-  preserves existing names so credit keys stay valid. Verified: re-importing
-  Carowinds enriched 11 existing coasters in place + added the genuinely-missing
-  ones, with **zero duplicates** (12 → 14, not 26).
-  - **Dedupe key (fixed):** `mergeCoasters` now matches on **`rcdbId` first**
-    (stable across name/punctuation/marketing changes), falling back to a normalized
-    name that collapses all punctuation + trademark symbols (`:`, `™`, `®`, …) — so
-    "Batman: The Ride™" matches "Batman The Ride". The two App-side scrape/speed
-    apply handlers use the same `normCoasterName`.
-  - *Follow-up (resolved):* both the **scrape** matcher (`fuzzyNameMatch`, `server.js`)
-    and the **import** `mergeCoasters` (`fuzzyCoasterMatch`, `credit-tracker.jsx`) now
-    apply the same stopword-containment fuzzy pass — match priority is **RCDB id →
-    exact normalized name → filler-word fuzzy**. So a first-time `"Flying Cobras"` now
-    merges into `"The Flying Cobras"` instead of duplicating (verified), while racing
-    pairs and true renames still never match. True renames/removals remain surfaced as
-    "new" rather than auto-applied — no auto-delete.
-  - <details><summary>original spec</summary>
-
-  When adding a new park or re-running "Look up coasters online" / a scrape against a
-  park that already has coasters, the import must **reconcile against the existing
-  list** instead of blindly appending — a **delta update keyed by normalized name**:
-  - **Match existing** coasters by normalized name → **merge, don't duplicate**:
-    fill in only *missing/empty* fields (e.g. `type`, `scale`, `status`, `rcdbId`/
-    `rcdbUrl`, and heights when blank) and **never clobber** hand-entered values
-    (especially `min`/`minAccompanied`, `racing`, `defunct`). A field-level merge.
-  - **Only truly-new** coasters (no name match) get appended as new rows.
-  - **Surface the delta** in the import/review UI before applying: "N new · M merged
-    (updated fields) · K unchanged" so the user sees what will change, mirroring the
-    scrape review panel. Optionally flag existing coasters *not* present in the new
-    source (possible renames/removals) without auto-deleting.
-  - **Preserve credits.** Merging must keep the credit key stable (`parkId|||name`);
-    if a merge would rename, route it through `updateCoaster` so credits migrate.
-  - Applies to all three intake paths: new-park creation, the RCDB/Wikipedia
-    "look up coasters" import, and (already partly handled) the height scrape apply.
-  - **Where to build it:** a shared `mergeCoasters(existing, incoming)` reconciler
-    that all three paths call, returning `{ added, merged, unchanged }` for the
-    review UI; wire `handleImport` and the new-park flow through it.
-  </details>
-
-- ~~**Top-bar rider pills → By-rider view (deep link).**~~ **Done** (see Done
-  section) — pills are now `<button>`s; clicking one jumps to Credits ▸ By rider
-  with that rider selected.
-
-- ~~**By-rider: credits vs. eligible at parks actually visited.**~~ **Done** (see
-  Done section) — both the top-bar pills and the By-rider strip now lead with a
-  visited-parks-scoped figure, with the all-parks total alongside it.
-
-- ~~**Rethink the park `badge` abbreviation system.**~~ **Done** (see Done
-  section) — added a new `family` field (kept separate from `badge`, which stays
-  available for one-off labels like "🏠 Home Park") populated for all 23 parks.
+All items from the original IA §8 review are done — see Done archive: "Coaster
+detail modal", "Coaster import = delta merge", "Top-bar rider pills deep-link",
+"By-rider visited-parks-scoped totals", "Park `family` field". Nothing open here.
 
 ## Mobile & desktop view fixes
 
@@ -343,20 +185,85 @@ does **not** change any counts.
 
 - **Settings sub-nav — vertical tab selectors broken on mobile.** The horizontal sub-tab strip (Riders · Regions · Backup · Account) does not work well as a vertical-tab pattern on small screens. Redesign the Settings sub-navigation for mobile: options include a stacked list/menu pattern, a `<select>`, or a sheet-style bottom drawer that lists the sections, replacing the current horizontal pill strip that clips or wraps.
 
+## Small UX polish
+
+- **Coaster Manufacturer field → dropdown, not free text.** `CoasterModal`'s edit
+  form (`credit-tracker.jsx:868`) and the Settings add/edit grid's "Type" input
+  both let manufacturer be typed freehand, so real data drifts ("B&M" vs "Bolliger
+  & Mabillard" vs typos) even though `KNOWN_MANUFACTURERS` (`credit-tracker.jsx:271`)
+  already lists the canonical set used by `splitManufacturerModel`. Swap the modal's
+  Manufacturer `<input>` for a `<select>` sourced from that same list (plus an
+  "Other" escape hatch that falls back to free text, since RCDB imports do carry
+  genuinely new/rare manufacturers not yet in the list) so hand-edits stay
+  consistent with scraped data instead of silently forking the spelling.
+
 ## Nice-to-haves
 
+- **Settings area to scrape/fill park map coordinates.** Park lat/long today lives in
+  a hardcoded `PARK_COORDS_BY_NORM` lookup (keyed via `normParkName()`) rather than a
+  per-park editable/scraped field — adding a park to the map requires a code change,
+  not a Settings action. Add a Settings ▸ Parks (or a new Map sub-tab) flow that
+  geocodes a park's coordinates automatically from its name/address via **Nominatim/
+  OpenStreetMap** (decided: free, no API key — accept the rate limit/precision
+  tradeoff), reviewed/applied like the existing height-scrape review panel, plus a
+  manual lat/long override field for parks the geocoder gets wrong. Coordinates need
+  to move from the static map into the `parks` table/schema so they're per-household-
+  editable data instead of hardcoded.
 - **Add park from mobile.** The current "Add park" flow (Settings ▸ Parks & Coasters)
   is hidden on mobile (`<640px`) per the Phase 4a decision. Need a mobile-friendly
   path to create a new park — likely a sheet/drawer triggered from the Plan/Log tab
   bar or a "+" affordance in the parks list, with a minimal form (name, region, family)
   and optional RCDB lookup. Coaster seeding via RCDB import should work from mobile too.
-- **Credit history / dates** — moved to *Deferred* (data-model change; pairs with
-  the DB migration).
-- *(per-rider "needs companion" → Deferred · export/import → Done)*
-
+- **Add park from the desktop main view.** On desktop, creating a new park still
+  requires navigating to Settings ▸ Parks & Coasters (`ManageParks`'s "＋ Add park"
+  button, `credit-tracker.jsx:3540`) — there's no shortcut from Plan/Log/Parks/Credits.
+  Add a quick-access "+ Add park" affordance to the desktop main views (e.g. the Parks
+  left-nav list, or a top-bar action) that opens the same add-park form inline/in a
+  modal, so creating a park doesn't require leaving the current view.
 ---
 
 ## Done (this build) — for reference
+
+**Web platform: Phases 0–4a (Supabase migration, auth/RLS, production deploy,
+mobile redesign) — verified live.**
+- **Phases 0–1 (data layer):** schema + RLS migration pushed to Supabase;
+  `credit-tracker.jsx` persistence rewritten to talk to Supabase directly
+  (`loadHouseholdData`/`saveRiders`/`saveParks`/`saveSettings`/`saveRiderCredits`);
+  minimal email/password `AuthGate` wraps `<App/>`; real `data/*.json` (5 riders,
+  23 parks, 254 coasters, 342 credits) imported via
+  `scripts/import-json-to-supabase.mjs`; `server.js` trimmed to a stateless
+  scraper service (scrape endpoints take the caller's parks data via POST body
+  instead of reading `data/parks.json` off disk; a new `postSSE()` helper drives
+  the SSE ones since `EventSource` can't POST). Bug caught and fixed: the SSE
+  endpoints tracked disconnect via `req.on("close")`, which fires as soon as
+  Express finishes reading the POST body, not on actual client disconnect —
+  switched to `res.on("close")`. Dead `DEFAULT_PARKS`/`DEFAULT_RIDERS` fallback
+  data removed (unreachable once load always goes through Supabase).
+- **Phase 2 (auth/RLS security pass):** verified with a second real account —
+  0 parks/0 credits visible, confirming RLS correctly isolates households and
+  `handle_new_user()` seeds a fresh empty household per signup. Added Settings ▸
+  Account (signed-in email + Sign out).
+- **Phase 3 (deploy):** SPA on Vercel (`coaster-tracker-gray.vercel.app`),
+  scraper on Render as a Docker web service (Playwright's base image, so headless
+  Chromium is already present); `API_BASE` env wiring, `cors` gated by
+  `FRONTEND_URL`, `PORT` read from env. Verified CORS preflight is scoped to the
+  real frontend origin only. Repo checked for secrets/PII before confirming
+  public-safe. Bug found and fixed: `VITE_SCRAPER_URL` was initially a
+  placeholder hostname from setup instructions, not the real Render URL —
+  surfaced as a misleading CORS error, actual cause was Render's edge 404 for an
+  unregistered hostname.
+- **Phase 4a (mobile redesign):** new **Plan mode** (per-park "where should we
+  go," rider avatars greyed/amber-badged by height) and **Log mode** (same view,
+  tap-to-toggle credits). Below 640px: bottom tab bar (Plan · Log · Settings
+  only — Parks/Credits redirect to Plan), rider pills collapse to a popover,
+  Settings sub-nav/region filter scroll horizontally. Park/coaster editing
+  reachable inline from Plan mode via `lockToParkId`.
+
+**Ride photo/thumbnail.** `imageUrl` field added (Wikipedia infobox image,
+hotlinked), rendered as a 56×56 thumbnail in the Parks detail table
+(`credit-tracker.jsx:3463`) and full-width in `CoasterModal`
+(`credit-tracker.jsx:929`). Not yet extended to the desktop Credits view — see
+the open item above.
 
 **⚠️ Critical bug fixed: editing a coaster silently deleted its credits.**
 Neither coaster-edit form (`CoasterModal`'s "Edit details" dialog, nor the

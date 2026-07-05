@@ -3626,43 +3626,88 @@ function riderLogProgress(park, rider, ridden) {
   return { done, total: live.length };
 }
 
-function LogMode({ parks, riders, ridden, onToggle }) {
+function LogMode({ parks, riders, ridden, onToggle, onOpenCoaster }) {
   const [selectedId, setSelectedId] = useState(null);
   const selected = parks.find(p => p.id === selectedId) || null;
 
   if (selected) {
     const live = liveCoasters(selected);
     return (
-      <div style={{ padding:T.s7, maxWidth:720 }}>
+      <div style={{ padding:`${T.s5}px ${T.s6}px`, maxWidth:720 }}>
         <button onClick={() => setSelectedId(null)} style={{ background:"none", border:"none", color:T.textLo, cursor:"pointer", fontSize:T.fsm, marginBottom:T.s4, fontFamily:"inherit", padding:0 }}>← Back to parks</button>
-        <div style={{ fontSize:T.fxl, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s2 }}>{selected.name}</div>
-        <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s5 }}>Tap a rider's avatar to log or undo a credit.</div>
+        <div style={{ fontSize:T.fxl, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s5 }}>{selected.name}</div>
 
-        <div style={{ display:"flex", gap:T.s3, marginBottom:T.s6, flexWrap:"wrap" }}>
-          {riders.map(r => {
-            const lp = riderLogProgress(selected, r, ridden);
-            return (
-              <div key={r.id} style={{ display:"flex", alignItems:"center", gap:T.s3, background:T.panel2, border:`1px solid ${T.border}`, borderRadius:T.r3, padding:`${T.s3} ${T.s4}` }}>
-                <RiderAvatar rider={r} status="alone" size={30}/>
-                <div>
-                  <div style={{ fontSize:T.fsm, fontWeight:T.wBold, color:T.ink }}>{r.name}</div>
-                  <div style={{ fontSize:T.fxs, color:T.textLo }}>{lp.done}/{lp.total} logged</div>
-                </div>
+        {/* Simple calculation card — combined tally + a per-rider breakdown */}
+        <div style={{ display:"flex", flexDirection:"column", gap:T.s3, background:T.panel2, border:`1px solid ${T.border}`, borderRadius:T.r3, padding:`${T.s4}px ${T.s5}px`, marginBottom:T.s6 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:T.s4 }}>
+            <div style={{ display:"flex", marginRight:T.s2 }}>
+              {riders.map((r, i) => <div key={r.id} style={{ marginLeft: i === 0 ? 0 : -10 }}><RiderAvatar rider={r} status="alone" size={34}/></div>)}
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>
+                {riders.reduce((s, r) => s + riderLogProgress(selected, r, ridden).done, 0)}
+                {" / "}
+                {riders.length * live.length} logged
               </div>
-            );
-          })}
+              <div style={{ fontSize:T.fxs, color:T.textLo }}>across {riders.length} rider{riders.length===1?"":"s"} · {live.length} coasters</div>
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:T.s5, flexWrap:"wrap", borderTop:`1px solid ${T.border}`, paddingTop:T.s3 }}>
+            {riders.map(r => {
+              const lp = riderLogProgress(selected, r, ridden);
+              return (
+                <div key={r.id} style={{ display:"flex", alignItems:"center", gap:T.s2 }}>
+                  <RiderAvatar rider={r} status="alone" size={22}/>
+                  <span style={{ fontSize:T.fxs, color:T.textLo }}>{r.name} <b style={{ color:T.ink }}>{lp.done}/{lp.total}</b></span>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        <div style={{ display:"flex", flexDirection:"column", gap:T.s4 }}>
+        <div style={{ display:"flex", flexDirection:"column", gap:T.s3 }}>
           {live.map(c => {
             const key = ck(selected.id, c.name);
+            const thr = effectiveThreshold(c);
+            const matColor = c.material === "Wood" ? "#fb923c" : c.material === "Hybrid" ? "#a78bfa" : "#38bdf8";
             return (
-              <div key={c.name} style={{ borderBottom:`1px solid ${T.border}`, paddingBottom:T.s3 }}>
-                <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink, marginBottom:T.s2 }}>{c.name}</div>
-                <div style={{ display:"flex", gap:T.s2 }}>
-                  {riders.map(r => (
-                    <RiderAvatar key={r.id} rider={r} status={rideStatus(c, r.height)} ridden={!!ridden[r.id]?.has(key)} onClick={() => onToggle(r.id, key)}/>
-                  ))}
+              <div key={c.name} style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r4, overflow:"hidden" }}>
+                <div
+                  onClick={onOpenCoaster ? () => onOpenCoaster(selected.id, c) : undefined}
+                  style={{ display:"flex", gap:T.s4, padding:T.s4, cursor: onOpenCoaster ? "pointer" : "default" }}
+                >
+                  {/* Thumbnail — real image if available, styled placeholder otherwise */}
+                  {c.imageUrl ? (
+                    <img src={c.imageUrl} alt={c.name} style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, objectFit:"cover", border:`1px solid ${T.border}` }}/>
+                  ) : (
+                    <div style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, background:`linear-gradient(135deg, ${matColor}33, ${matColor}11)`, border:`1px solid ${matColor}44`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>
+                      🎢
+                    </div>
+                  )}
+                  {/* Info */}
+                  <div style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column", justifyContent:"center", gap:T.s1 }}>
+                    <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name}</div>
+                    <div style={{ fontSize:T.fxs, color:T.textFaint }}>
+                      {[c.manufacturer, c.model].filter(Boolean).join(" · ") || c.material || "Coaster"}
+                    </div>
+                    {/* Height badge(s) */}
+                    <div style={{ display:"flex", gap:T.s2, flexWrap:"wrap", marginTop:2 }}>
+                      {thr == null ? (
+                        <span style={{ fontSize:T.fxs, color:T.textGhost }}>height unknown</span>
+                      ) : thr.companion ? (
+                        <>
+                          <span style={{ background:ACC_AMBER+"22", border:`1px solid ${ACC_AMBER}55`, borderRadius:T.r1, padding:"1px 7px", color:ACC_AMBER, fontSize:T.fxs, fontWeight:T.wBold }}>{thr.ft}" w/ adult</span>
+                          {c.min != null && <span style={{ background:T.border2, borderRadius:T.r1, padding:"1px 7px", color:T.textMid, fontSize:T.fxs }}>{c.min}" alone</span>}
+                        </>
+                      ) : (
+                        <span style={{ background:T.border2, borderRadius:T.r1, padding:"1px 7px", color:T.textMid, fontSize:T.fxs }}>{thr.ft}" alone</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {/* Rider logging row — tap an avatar to toggle that credit */}
+                <div style={{ display:"flex", gap:T.s3, padding:`${T.s3}px ${T.s4}px`, borderTop:`1px solid ${T.border}`, background:T.panel2 }}>
+                  {riders.map(r => <RiderAvatar key={r.id} rider={r} status={rideStatus(c, r.height)} ridden={!!ridden[r.id]?.has(key)} size={40} onClick={() => onToggle(r.id, key)}/>)}
                 </div>
               </div>
             );
@@ -3673,25 +3718,32 @@ function LogMode({ parks, riders, ridden, onToggle }) {
   }
 
   return (
-    <div style={{ padding:T.s7, maxWidth:560 }}>
+    <div style={{ padding:`${T.s5}px ${T.s6}px`, maxWidth:560 }}>
       <div style={{ fontSize:T.fxl, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s2 }}>What did we ride?</div>
       <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s6 }}>Pick a park to log credits for {riders.map(r=>r.name).join(", ")}.</div>
       <div style={{ display:"flex", flexDirection:"column", gap:T.s3 }}>
         {parks.map(p => {
           const live = liveCoasters(p);
-          const done = riders.length ? Math.round(riders.reduce((s, r) => s + riderLogProgress(p, r, ridden).done, 0) / riders.length) : 0;
+          const perRider = riders.map(r => ({ r, ...riderLogProgress(p, r, ridden) }));
           return (
             <button key={p.id} onClick={() => setSelectedId(p.id)} style={{
-              display:"flex", alignItems:"center", gap:T.s4, padding:T.s4, borderRadius:T.r3,
-              border:`1px solid ${T.border}`, background:T.panel, cursor:"pointer", textAlign:"left", fontFamily:"inherit",
+              display:"flex", flexDirection:"column", gap:T.s3, padding:T.s4, borderRadius:T.r3,
+              border:`1px solid ${T.border}`, background:T.panel, cursor:"pointer", textAlign:"left", fontFamily:"inherit", width:"100%",
             }}>
-              <div style={{ flex:1 }}>
+              <div>
                 <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>{p.name}</div>
-                <div style={{ fontSize:T.fxs, color:T.textFaint }}>{REGIONS[p.region] || p.region}</div>
+                <div style={{ fontSize:T.fxs, color:T.textFaint }}>{REGIONS[p.region] || p.region} · {live.length} coasters</div>
               </div>
-              <span style={{ background:T.panel2, color:T.textLo, fontSize:T.fxs, fontWeight:T.wBold, padding:"3px 10px", borderRadius:T.pill, whiteSpace:"nowrap" }}>
-                avg {done}/{live.length} logged
-              </span>
+              {perRider.length > 0 && (
+                <div style={{ display:"flex", gap:T.s6, flexWrap:"nowrap" }}>
+                  {perRider.map(({ r, done, total }) => (
+                    <div key={r.id} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                      <RiderAvatar rider={r} status="alone" size={44}/>
+                      <span style={{ fontSize:T.fxs, color:r.color, fontWeight:T.wBold, lineHeight:1 }}>{done}/{total}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </button>
           );
         })}
@@ -4108,7 +4160,7 @@ export default function App() {
       <div className="ct-content-area" style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0, overflowY:"auto" }}>
         {/* Plan/Log mode — prototype, additive alongside the existing tabs */}
         {view==="plan" && <PlanMode parks={parks} riders={riders} parkEditProps={{ onAddPark:addPark, onUpdatePark:updatePark, onDeletePark:deletePark, onAddCoaster:addCoaster, onUpdateCoaster:updateCoaster, onDeleteCoaster:deleteCoaster, onApplyHeights:applyHeights, onApplySpeeds:applySpeeds, onMergeImport:mergeImportCoasters }}/>}
-        {view==="log" && <LogMode parks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden}/>}
+        {view==="log" && <LogMode parks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden} onOpenCoaster={openCoaster}/>}
 
         {/* Parks tab — unified left nav with Explorer / Height sub-views */}
         {view==="parks" && <ParksTab visibleParks={visibleParks} allParks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden} onSelectAll={selectAll} onClearAll={clearAll} onOpenCoaster={openCoaster}/>}
