@@ -273,9 +273,8 @@ household; the client only ever uses the anon key.
   it doesn't affect eligibility/counts.)
 
 | RCDB import | `GET /api/lookup-coasters` | — (live scrape) | park search → coaster list |
-| Height fill | `POST /api/fill-heights` (SSE, body `{parks}`) | stateless | streams `{coaster,height,source}` |
-| Official scrape | `POST /api/scrape-heights` (body `{park}`) | stateless | headless-browser scrape of the park's `officialUrl`; matches coasters by punctuation-stripped name + a stopword-containment fuzzy pass (`fuzzyNameMatch`), returns proposed `{min,minAccompanied}` updates with a `fuzzy`/`scrapedName` flag (client reviews & applies) |
-| Batch scrape | `POST /api/scrape-all-heights` (SSE, body `{parks}`) | stateless | runs the official scrape over every `officialUrl` park, streaming per-park results to a combined review panel |
+| Height fill | `POST /api/fill-heights` (SSE, body `{parks}`) | stateless | one job checks every source instead of leaving the choice to the user: for each park with an `officialUrl`, scrapes it and trusts it over anything else (matches coasters by punctuation-stripped name + a stopword-containment fuzzy pass, `fuzzyNameMatch`; also corrects stale values on coasters that already have a height, not just blanks); anything still missing (or at a park with no official source) falls back to Wikipedia. Streams `{coasterIdx,height,minAccompanied,source,fuzzy,changed}` per coaster (client reviews & applies) |
+| Official scrape (single park) | `POST /api/scrape-heights` (body `{park}`) | stateless | headless-browser scrape of one park's `officialUrl`, used by the manual "Scrape official heights" button in park settings — same matching logic as the height-fill job's official pass |
 | RCDB stats | `POST /api/fill-speeds` (SSE, body `{parks}`) | stateless | resolves speed (mph), height (ft), year opened, manufacturer, model, material, and style from each coaster's own rcdb.com page for operating coasters missing any of those (prefers a known `rcdbUrl`, else quick-search + park-name disambiguation); name kept despite the broadened scope |
 
 The SSE endpoints are POST, not GET — they need the caller's parks data in the
