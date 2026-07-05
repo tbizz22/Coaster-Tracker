@@ -2348,8 +2348,43 @@ function LookupList({ coasters, parkUrl, lookupSel, setLookupSel, lookupMin, set
   );
 }
 
-function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
+function GeneralSettings({ parks, onApplyHeights, onApplySpeeds, onUpdatePark }) {
   const [enrichRunning,    setEnrichRunning]    = useState(false);
+  const [geocodeRunning,   setGeocodeRunning]   = useState(false);
+  const [geocodeResults,   setGeocodeResults]   = useState(null); // [{parkId, parkName, lat, lng, displayName}]
+  const [geocodeError,     setGeocodeError]     = useState("");
+  const missingCoords = parks.filter(p => p.lat == null || p.lng == null);
+
+  // Nominatim's usage policy caps unauthenticated use at ~1 request/sec, so this
+  // runs sequentially with a delay rather than in parallel — fine at the scale
+  // of "parks in one household" (tens, not hundreds).
+  async function handleGeocodeAll() {
+    setGeocodeRunning(true); setGeocodeError(""); setGeocodeResults([]);
+    const found = [];
+    for (const p of missingCoords) {
+      try {
+        const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(p.name)}`);
+        const data = await resp.json();
+        if (Array.isArray(data) && data.length) {
+          found.push({ parkId: p.id, parkName: p.name, lat: Number(data[0].lat).toFixed(4), lng: Number(data[0].lon).toFixed(4), displayName: data[0].display_name });
+          setGeocodeResults([...found]);
+        }
+      } catch (e) {
+        setGeocodeError(`Lookup failed partway through: ${e.message}`);
+        break;
+      }
+      await new Promise(r => setTimeout(r, 1100));
+    }
+    setGeocodeRunning(false);
+  }
+
+  function handleApplyGeocode() {
+    for (const r of geocodeResults || []) {
+      const p = parks.find(pk => pk.id === r.parkId);
+      if (p) onUpdatePark({ ...p, lat: Number(r.lat), lng: Number(r.lng) });
+    }
+    setGeocodeResults(null);
+  }
   // enrichResults: { speeds, heights, finished }
   // speeds: { results, found, notFound, total, error }
   // heights: { results, found, notFound, total, error }
@@ -2592,6 +2627,46 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
             </div>
           );
         })()}
+      </>)}
+
+      {/* ── Geocode park map coordinates via Nominatim/OpenStreetMap ── */}
+      {card(<>
+        <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>
+          <div style={{ flex:1, minWidth:200 }}>
+            <div style={{ fontSize:T.fmd, fontWeight:T.wBold, color:T.ink }}>Geocode Park Coordinates</div>
+            <div style={{ fontSize:T.fsm, color:T.textLo, marginTop:2 }}>
+              Look up lat/long for every park missing coordinates, via Nominatim/OpenStreetMap (free, no API key). Review before applying.
+            </div>
+          </div>
+          {actionBtn(handleGeocodeAll, geocodeRunning || missingCoords.length === 0, geocodeRunning ? `${geocodeResults?.length ?? 0}/${missingCoords.length}…` : `Find (${missingCoords.length} missing)`)}
+        </div>
+
+        {geocodeError && <div style={{ fontSize:T.fsm, color:"#f87171", marginTop:T.s3 }}>⚠ {geocodeError}</div>}
+
+        {geocodeResults && (
+          <div style={resultsDivider}>
+            {geocodeResults.length === 0 && !geocodeRunning && (
+              <div style={{ fontSize:T.fsm, color:T.textGhost, fontStyle:"italic" }}>No matches found.</div>
+            )}
+            {geocodeResults.length > 0 && (
+              <div style={{ maxHeight:220, overflowY:"auto", marginBottom:T.s2 }}>
+                {geocodeResults.map((r, i) => (
+                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"3px 0", borderBottom:`1px solid ${T.hair}`, fontSize:T.fxs, gap:T.s2 }}>
+                    <span style={{ color:T.text, flexShrink:0 }}>{r.parkName}</span>
+                    <span style={{ color:T.textFaint, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textAlign:"right" }} title={r.displayName}>{r.displayName}</span>
+                    <span style={{ color:"#4ade80", flexShrink:0 }}>{r.lat}, {r.lng}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!geocodeRunning && (
+              <div style={{ display:"flex", gap:T.s2, marginTop:T.s3 }}>
+                {geocodeResults.length > 0 && actionBtn(handleApplyGeocode, false, `Apply ${geocodeResults.length} update${geocodeResults.length!==1?"s":""}`)}
+                {dismissBtn(() => setGeocodeResults(null))}
+              </div>
+            )}
+          </div>
+        )}
       </>)}
     </div>
   );
@@ -4492,7 +4567,7 @@ export default function App() {
         {/* Settings — desktop: sidebar + content; mobile: menu list → section */}
         {view==="settings" && (() => {
           const settingsContent = (tab) => {
-            if (tab==="general") return <GeneralSettings parks={parks} onApplyHeights={applyHeights} onApplySpeeds={applySpeeds}/>;
+            if (tab==="general") return <GeneralSettings parks={parks} onApplyHeights={applyHeights} onApplySpeeds={applySpeeds} onUpdatePark={updatePark}/>;
             if (tab==="parks")   return <ManageParks parks={parks} onAddPark={addPark} onUpdatePark={updatePark} onDeletePark={deletePark} onAddCoaster={addCoaster} onUpdateCoaster={updateCoaster} onDeleteCoaster={deleteCoaster} onMergeImport={mergeImportCoasters}/>;
             if (tab==="riders")  return <ManageRiders riders={riders} onAdd={addRider} onUpdate={updateRider} onDelete={deleteRider}/>;
             if (tab==="regions") return <ManageRegions regions={regions} parks={parks} onUpdate={updateRegions}/>;
