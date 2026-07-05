@@ -2392,7 +2392,7 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
                 background:"transparent", border:`1px solid ${T.border2}`, color: stopping ? T.textFaint : "#f87171",
                 borderRadius:T.r3, padding:"8px 14px", cursor: stopping ? "default" : "pointer",
                 fontSize:T.fbase, fontWeight:T.wBold, fontFamily:"inherit", whiteSpace:"nowrap",
-              }}>{stopping ? "Stopping…" : "Stop heights"}</button>
+              }}>{stopping ? "Stopping…" : "Stop scrape"}</button>
             )}
             {actionBtn(handleEnrich, enrichRunning || enrichIncomplete === 0 || nothingSelected, enrichProgress)}
           </div>
