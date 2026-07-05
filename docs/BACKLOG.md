@@ -147,30 +147,6 @@ mirrored CSS variables, shared `labelCss` / `fieldLabelCss`, the responsive shel
 - **Light/extra theming** is out of scope (decision: refine the existing dark
   theme).
 
-## Desktop park-detail table: redesign (user feedback)
-
-User feedback on the current Parks ▸ detail table (the per-rider stat-chip row +
-data table), captured for the desktop "hardened, more data/insights" pass —
-**not yet started, this is notes for when that work begins**:
-
-- **Stat chips are inconsistent and mostly not useful.** The row of summary chips
-  (coaster counts by min-height band, unknown count, "rider can ride" count) uses
-  different colors for what's conceptually the same kind of data, which reads as
-  arbitrary rather than meaningful. Of the whole row, only the **"[Rider] can
-  ride: N"** chip was called out as genuinely useful — the height-band breakdown
-  chips should be redesigned or dropped rather than carried forward as-is.
-- **Type column is too verbose, and should split + abbreviate.** The combined
-  "Manufacturer Model" free-text column reads as one long string. Wants its own
-  dedicated column (separate from name), and manufacturer names should always use
-  common industry abbreviations (B&M, RMC, GCI, PTC, etc.) instead of full names.
-- **Ride photo/thumbnail — extend to Credits view.** `imageUrl` thumbnails are done
-  in Parks detail + `CoasterModal` (see Done archive), but the desktop **Credits**
-  view (By-park / By-rider pivot) still shows text-only rows. Add the same
-  thumbnail treatment there now that `imageUrl` is populated for most coasters.
-- **Legend row should be a hover/tooltip on desktop, not always-on screen.** The
-  "✓ Can ride · ✓\* With an adult · ✗ Too short · ? Height unknown" key currently
-  sits permanently on the page; move it behind a small "ⓘ" affordance instead.
-
 ## IA / UX (from INFORMATION-ARCHITECTURE.md §8)
 
 All items from the original IA §8 review are done — see Done archive: "Coaster
@@ -192,6 +168,26 @@ detail modal", "Coaster import = delta merge", "Top-bar rider pills deep-link",
 ---
 
 ## Done (this build) — for reference
+
+**Desktop park-detail table redesign (user feedback).** Addressed all four
+notes on the Parks ▸ detail table:
+- Dropped the `HEIGHT_BANDS` breakdown chips and the "Unknown" chip from the
+  stat-card row (arbitrary per-band colors, and the unknown-height count
+  already surfaces in the "N missing a height" subtitle) — kept only
+  "Coasters" total and, when a rider lens is active, the "[Rider] can ride"
+  chip that feedback called out as the genuinely useful one.
+- Split the combined Type column into separate **Manufacturer** and **Model**
+  columns; Manufacturer always renders through a new `MANUFACTURER_ABBR` map
+  (`abbrMfr()`) so a coaster stored with the full name ("Bolliger & Mabillard")
+  still displays the common abbreviation ("B&M") — the full name is kept as a
+  tooltip.
+- The height-eligibility legend (✓/✓\*/✗/?) moved behind a small "ⓘ" hover/focus
+  affordance (`LegendInfo`) instead of sitting permanently under the table.
+- `imageUrl` thumbnails (28×28) now render in the desktop Credits view's
+  coaster-name cell, in both the By-park pivot grid and the By-rider drawer
+  rows (skipped on the `compact`/mobile variant, which already has its own
+  card layout) — a blank placeholder swatch shows for coasters with no image
+  yet, so the column doesn't jump width row to row.
 
 **Mobile/desktop view-boundary audit — confirmed already done.** Re-checked all
 three items from the old "Mobile & desktop view fixes" section against current

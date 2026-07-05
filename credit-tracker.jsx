@@ -351,6 +351,23 @@ function normalizeCoaster(raw = {}) {
 // without auditing each one individually; manufacturer/model are the stored fields.
 const coasterType = c => [c?.manufacturer, c?.model].filter(Boolean).join(" ");
 
+// Full manufacturer name → common industry abbreviation, for display sites that
+// want the short form regardless of which spelling is actually stored (older
+// hand-entered data and some RCDB imports carry the full name, not the abbreviation).
+const MANUFACTURER_ABBR = {
+  "Bolliger & Mabillard": "B&M", "Intamin": "Intamin", "Vekoma": "Vekoma",
+  "Arrow Dynamics": "Arrow", "Premier Rides": "Premier", "S&S Worldwide": "S&S",
+  "Mack Rides": "Mack", "Great Coasters International": "GCI",
+  "Philadelphia Toboggan Coasters": "PTC", "Gerstlauer": "Gerstlauer",
+  "Zamperla": "Zamperla", "Chance Rides": "Chance", "Chance Morgan": "Chance",
+  "Custom Coasters International": "CCI", "Anton Schwarzkopf": "Schwarzkopf",
+  "Rocky Mountain Construction": "RMC", "E&F Miler Industries": "Miler",
+  "Wisdom Rides": "Wisdom", "Larson International": "Larson",
+  "The Gravity Group": "Gravity Group", "Dinn Corporation": "Dinn",
+  "Maurer Söhne": "Maurer",
+};
+const abbrMfr = m => MANUFACTURER_ABBR[m] || m || "";
+
 // Normalize a coaster name for *fallback* matching: lower-case, then collapse every
 // non-alphanumeric run (apostrophes, colons, ™/®/℠, dashes, parens, periods…) to a
 // single space. This makes punctuation/trademark-symbol differences (e.g.
@@ -733,6 +750,27 @@ function HeightLegend({ color = T.accent, states = RIDE_STATUS_ORDER }) {
           </span>
         );
       })}
+    </div>
+  );
+}
+
+// Same legend content, but tucked behind a small "ⓘ" affordance instead of
+// sitting permanently on the page — desktop feedback was that the always-on
+// key row was more screen real estate than the info was worth.
+function LegendInfo({ color = T.accent, states = RIDE_STATUS_ORDER }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position:"relative", display:"inline-block" }}
+      onMouseEnter={()=>setOpen(true)} onMouseLeave={()=>setOpen(false)}>
+      <button onFocus={()=>setOpen(true)} onBlur={()=>setOpen(false)} title="Height-status legend" style={{
+        background:"none", border:`1px solid ${T.border2}`, color:T.textLo, borderRadius:"50%",
+        width:18, height:18, fontSize:T.fxs, cursor:"pointer", fontFamily:"inherit", lineHeight:1, padding:0,
+      }}>ⓘ</button>
+      {open && (
+        <div style={{ position:"absolute", zIndex:5, top:"calc(100% + 6px)", left:0, background:T.panel, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:T.s3, boxShadow:"0 8px 24px rgba(0,0,0,0.4)", whiteSpace:"nowrap" }}>
+          <HeightLegend color={color} states={states}/>
+        </div>
+      )}
     </div>
   );
 }
@@ -1182,21 +1220,22 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
         ))}
       </div>
 
-      {/* Stat cards (reference) */}
+      {/* Stat cards (reference) — trimmed to what feedback called genuinely
+          useful: the total and (when a rider lens is active) their can-ride
+          count. The old min-height-band breakdown was dropped (arbitrary
+          per-band colors, redundant with the table itself); the unknown-height
+          count already surfaces in the subtitle above ("N missing a height"). */}
       <div style={{ display:"flex", gap:T.s4, marginBottom:T.s6, flexWrap:"wrap" }}>
         <StatCard label="Coasters" value={avail} color={T.ink}/>
-        {HEIGHT_BANDS.map(b => (
-          <StatCard key={b.label} label={`Min ${b.label}`} value={live.filter(c=>c.min!=null&&b.test(c.min)).length} color={b.color}/>
-        ))}
-        <StatCard label="Unknown" value={live.filter(c=>c.min==null).length} color={T.textFaint}/>
         {lensRider && <StatCard label={`${lensRider.name} can ride`} value={can} color={lensRider.color}/>}
       </div>
 
       {/* Coaster table — last column adapts to the active lens */}
       <div style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r5, overflow:"hidden" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 60px 56px 64px", padding:"8px 14px", background:T.panel2, borderBottom:`1px solid ${T.border}`, ...labelCss, gap:T.s2, alignItems:"center" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"2fr 0.6fr 0.8fr 60px 56px 64px", padding:"8px 14px", background:T.panel2, borderBottom:`1px solid ${T.border}`, ...labelCss, gap:T.s2, alignItems:"center" }}>
           <SortTh label="Coaster" col="name" sort={sort.sort} onSort={sort.onSort}/>
-          <SortTh label="Type" col="type" sort={sort.sort} onSort={sort.onSort}/>
+          <SortTh label="Manufacturer" col="type" sort={sort.sort} onSort={sort.onSort}/>
+          <div>Model</div>
           <SortTh label="Min" col="min" sort={sort.sort} onSort={sort.onSort} align="center"/>
           <div style={{textAlign:"center"}} title="Minimum height with a supervising adult">w/ adult</div>
           <div style={{textAlign:"center", color: lensRider ? lensRider.color : T.textFaint}}>{lensRider ? lensRider.name : "Racing"}</div>
@@ -1207,7 +1246,7 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
           const dim = lensRider && !eligible;
           const lowest = c.minAccompanied ?? c.min;   // lowest posted threshold, for the "need X" hint
           return (
-            <div key={c.name} style={{ display:"grid", gridTemplateColumns:"2fr 1fr 60px 56px 64px", padding:"8px 14px", borderBottom: i<arr.length-1?`1px solid ${T.hair}`:"none",
+            <div key={c.name} style={{ display:"grid", gridTemplateColumns:"2fr 0.6fr 0.8fr 60px 56px 64px", padding:"8px 14px", borderBottom: i<arr.length-1?`1px solid ${T.hair}`:"none",
               background: lensRider
                 ? (eligible ? (i%2===0?"transparent":T.zebra) : (i%2===0?"#0a0510":"#070309"))
                 : (i%2===0?"transparent":T.zebra),
@@ -1219,7 +1258,8 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
                 {st==="no" && <span style={{ fontSize:T.fxs, color:T.textLo, marginLeft:2 }}>{lowest!=null ? `${lowest-lensRider.height}" too short` : "too short"}</span>}
                 {st==="unknown" && <span style={{ fontSize:T.fxs, color:T.textFaint, marginLeft:2 }}>{RIDE_STATUS.unknown.legend}</span>}
               </div>
-              <div style={{ fontSize:T.fsm, color:T.textFaint }}>{coasterType(c)}{c.speedMph!=null && <span style={{ color:T.textGhost }}> · {c.speedMph} mph</span>}</div>
+              <div style={{ fontSize:T.fsm, color:T.textFaint, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={c.manufacturer || ""}>{abbrMfr(c.manufacturer)}</div>
+              <div style={{ fontSize:T.fsm, color:T.textFaint, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.model || ""}{c.speedMph!=null && <span style={{ color:T.textGhost }}> · {c.speedMph} mph</span>}</div>
               <div style={{textAlign:"center"}}><HtBadge min={c.min}/></div>
               <div style={{textAlign:"center"}}><AccBadge value={c.minAccompanied}/></div>
               <div style={{textAlign:"center"}}>
@@ -1231,8 +1271,8 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
           );
         })}
       </div>
-      <div style={{ marginTop:T.s5, display:"flex", flexDirection:"column", gap:T.s2 }}>
-        {lensRider && <HeightLegend color={lensRider.color}/>}
+      <div style={{ marginTop:T.s5, display:"flex", alignItems:"center", gap:T.s3 }}>
+        {lensRider && <LegendInfo color={lensRider.color}/>}
         <div style={{ fontSize:T.fxs, color:T.textGhost }}>
           <span style={{color:"#818cf8"}}>⇄</span> = dueling/racing — both tracks count as separate credits
           {lensRider && <> · pick <strong style={{color:T.accent}}>🗺 Overview</strong> to see all coasters neutrally</>}
@@ -1439,7 +1479,10 @@ function RiderCreditsPanel({ rider, ridden, onToggle, visibleParks, allParks, on
                                   const isDone = ridden[rider.id]?.has(key);
                                   return (
                                     <div key={c.name} style={{ display:"grid", gridTemplateColumns:gridCols, padding:"7px 14px", borderBottom:i<arr.length-1?`1px solid ${T.hair}`:"none", background:isDone?`${rider.color}0a`:(i%2===0?"transparent":T.zebra), alignItems:"center", gap:T.s2 }}>
-                                      <div style={{ display:"flex", alignItems:"center", gap:5, minWidth:0 }}>
+                                      <div style={{ display:"flex", alignItems:"center", gap:7, minWidth:0 }}>
+                                        {!compact && (c.imageUrl
+                                          ? <img src={c.imageUrl} alt="" style={{ width:28, height:28, flexShrink:0, borderRadius:T.r2, objectFit:"cover", border:`1px solid ${T.border}` }} onError={e=>e.currentTarget.style.display="none"}/>
+                                          : <div style={{ width:28, height:28, flexShrink:0, borderRadius:T.r2, background:T.panel2, border:`1px solid ${T.hair}` }}/>)}
                                         {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px" }}>⇄</span>}
                                         <span onClick={()=>onOpenCoaster(p.id, c)} title="View coaster details" onMouseEnter={e=>e.currentTarget.style.textDecoration="underline"} onMouseLeave={e=>e.currentTarget.style.textDecoration="none"} style={{ fontSize:T.fbase, fontWeight: isDone?T.wBold:T.wSemi, color: isDone ? T.ink : T.textMid, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor:"pointer" }}>{c.name}</span>
                                       </div>
@@ -1752,7 +1795,10 @@ function CreditTracker({ riders, ridden, onToggle, onSelectAll, onClearAll, visi
                   onMouseEnter={e => e.currentTarget.style.background = "#1e293b22"}
                   onMouseLeave={e => e.currentTarget.style.background = i%2===0 ? "transparent" : T.zebra}
                 >
-                  <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                    {c.imageUrl
+                      ? <img src={c.imageUrl} alt="" style={{ width:28, height:28, flexShrink:0, borderRadius:T.r2, objectFit:"cover", border:`1px solid ${T.border}` }} onError={e=>e.currentTarget.style.display="none"}/>
+                      : <div style={{ width:28, height:28, flexShrink:0, borderRadius:T.r2, background:T.panel2, border:`1px solid ${T.hair}` }}/>}
                     {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px", flexShrink:0 }}>⇄</span>}
                     <span onClick={()=>onOpenCoaster(parkData.id, c)} title="View coaster details" onMouseEnter={e=>e.currentTarget.style.textDecoration="underline"} onMouseLeave={e=>e.currentTarget.style.textDecoration="none"} style={{ fontSize:T.fbase, fontWeight:T.wSemi, color: anyDone ? T.text : T.textLo, cursor:"pointer" }}>{c.name}</span>
                   </div>
