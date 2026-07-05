@@ -4014,8 +4014,9 @@ function PlanMode({ parks, riders, parkEditProps }) {
 // ═══════════════════════════════════════════════════════════════════════════
 function riderLogProgress(park, rider, ridden) {
   const live = liveCoasters(park);
-  const done = live.filter(c => ridden[rider.id]?.has(ck(park.id, c.name))).length;
-  return { done, total: live.length };
+  const eligible = live.filter(c => isEligible(c, rider.height));
+  const done = eligible.filter(c => ridden[rider.id]?.has(ck(park.id, c.name))).length;
+  return { done, total: eligible.length };
 }
 
 function LogMode({ parks, riders, ridden, onToggle, onOpenCoaster }) {
@@ -4039,7 +4040,7 @@ function LogMode({ parks, riders, ridden, onToggle, onOpenCoaster }) {
               <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>
                 {riders.reduce((s, r) => s + riderLogProgress(selected, r, ridden).done, 0)}
                 {" / "}
-                {riders.length * live.length} logged
+                {riders.reduce((s, r) => s + riderLogProgress(selected, r, ridden).total, 0)} logged
               </div>
               <div style={{ fontSize:T.fxs, color:T.textLo }}>across {riders.length} rider{riders.length===1?"":"s"} · {live.length} coasters</div>
             </div>
