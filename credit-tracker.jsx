@@ -1181,12 +1181,11 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
                     onMouseEnter={e => { if (!sel) e.currentTarget.style.background = "#1e293b22"; }}
                     onMouseLeave={e => { if (!sel) e.currentTarget.style.background = "transparent"; }}
                   >
-                    <div style={{ minWidth:0 }}>
+                    <div style={{ minWidth:0 }} title={p.tag}>
                       <div style={{ display:"flex", alignItems:"center", gap:T.s1 }}>
                         {p.family && familyInfo(p.family) && (
                           <span title={familyInfo(p.family).label} style={{ fontSize:T.fxs, fontWeight:T.wBold, color:familyInfo(p.family).color, background:familyInfo(p.family).color+"1a", border:`1px solid ${familyInfo(p.family).color}44`, borderRadius:T.r2, padding:"0 4px", flexShrink:0 }}>{p.family}</span>
                         )}
-                        <span style={{ fontSize:T.fxs, color:T.textFaint, fontWeight:400, flexShrink:0 }}>{p.tag}</span>
                         <span style={{ fontSize:T.fbase, fontWeight: sel ? T.wBold : 400, color: sel ? T.ink : T.textMid, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</span>
                         {(p.badges||[]).map(code => badgeInfo(code) && (
                           <span key={code} title={badgeInfo(code).label} style={{ fontSize:T.fxs, flexShrink:0 }}>{badgeInfo(code).icon}</span>
