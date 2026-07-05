@@ -4483,9 +4483,12 @@ export default function App() {
       <div style={{ position:"relative", background:`linear-gradient(135deg,${T.panel2} 0%,${T.panel} 100%)`, borderBottom:`1px solid ${T.border}`, padding:`${T.s5}px ${T.s7}px` }}>
         <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap", justifyContent:"space-between" }}>
           <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap", minWidth:0 }}>
-            <span style={{ fontSize:T.fxl, fontWeight:T.wHeavy, letterSpacing:"0.01em", flexShrink:0, lineHeight:1 }}>
+            <button onClick={() => setView(isMobile ? "plan" : "parks")} title="Home" style={{
+              background:"none", border:"none", padding:0, cursor:"pointer", fontFamily:"inherit",
+              fontSize:T.fxl, fontWeight:T.wHeavy, letterSpacing:"0.01em", flexShrink:0, lineHeight:1,
+            }}>
               <span style={{ color:T.ink }}>COASTER </span><span style={{ color:"#FFC629" }}>ATTACK</span>
-            </span>
+            </button>
             <span className="ct-topbar-meta" style={{ fontSize:T.fxs, color:T.textFaint, flexShrink:0 }}>{parks.length} parks · {totalCoasters} credits</span>
             <div className="ct-rider-pills" style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>
               {grandTotals.map(r => (
