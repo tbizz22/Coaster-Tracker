@@ -29,7 +29,11 @@ function mapHit(h) {
   };
 }
 
-export async function scrapeParkHeights(officialUrl, { timeoutMs = 60000 } = {}) {
+// Thrown when `isCancelled` flips true mid-scrape — lets the caller (server.js)
+// tell "user stopped it" apart from a real scrape failure.
+export class ScrapeCancelledError extends Error {}
+
+export async function scrapeParkHeights(officialUrl, { timeoutMs = 60000, isCancelled = () => false } = {}) {
   if (!officialUrl) throw new Error("No official URL provided for this park.");
 
   const browser = await chromium.launch({ headless: true });
@@ -43,9 +47,23 @@ export async function scrapeParkHeights(officialUrl, { timeoutMs = 60000 } = {})
       }
     });
 
-    await page.goto(officialUrl, { waitUntil: "networkidle", timeout: timeoutMs }).catch(() => {});
+    // page.goto's own timeout (default 60s) is too coarse for a responsive Stop
+    // button — race it against a cancellation poll so a click takes effect in
+    // ~300ms instead of however long navigation has left to time out.
+    let cancelPoll;
+    const loadCancelled = await Promise.race([
+      page.goto(officialUrl, { waitUntil: "networkidle", timeout: timeoutMs }).then(() => false).catch(() => false),
+      new Promise(resolve => { cancelPoll = setInterval(() => { if (isCancelled()) resolve(true); }, 300); }),
+    ]);
+    clearInterval(cancelPoll);
+    if (loadCancelled || isCancelled()) throw new ScrapeCancelledError();
+
     // Give the search request a moment if networkidle resolved early
-    for (let i = 0; i < 8 && !captured; i++) await page.waitForTimeout(500);
+    for (let i = 0; i < 8 && !captured; i++) {
+      if (isCancelled()) throw new ScrapeCancelledError();
+      await page.waitForTimeout(500);
+    }
+    if (isCancelled()) throw new ScrapeCancelledError();
 
     if (!captured) throw new Error("Could not capture the park's attraction search request (page layout may have changed).");
 

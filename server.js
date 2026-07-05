@@ -6,7 +6,7 @@
 import express from "express";
 import cors from "cors";
 import * as cheerio from "cheerio";
-import { scrapeParkHeights } from "./scrape-heights.js";
+import { scrapeParkHeights, ScrapeCancelledError } from "./scrape-heights.js";
 
 const app = express();
 // FRONTEND_URL = the deployed SPA's production origin (comma-separated for
@@ -366,18 +366,21 @@ app.post("/api/fill-heights", async (req, res) => {
       const officialByPark = new Map();
       const officialParkIds = [...new Set(work.filter(w => w.officialUrl).map(w => w.parkId))];
       for (const parkId of officialParkIds) {
+        if (job.cancelled) break;
         const park = parks.find(p => p.id === parkId);
         try {
-          const scraped = await scrapeParkHeights(park.officialUrl);
+          const scraped = await scrapeParkHeights(park.officialUrl, { isCancelled: () => job.cancelled });
           const { matched } = matchScrapeToPark(park, scraped);
           officialByPark.set(parkId, new Map(matched.map(m => [m.coasterIdx, m])));
         } catch (err) {
+          if (err instanceof ScrapeCancelledError) break;
           console.log(`[fill-heights] Official scrape failed for ${park.name}: ${err.message}`);
           officialByPark.set(parkId, new Map());
         }
       }
 
       for (const item of work) {
+        if (job.cancelled) { console.log("[fill-heights] Cancelled by user — stopping"); break; }
         const officialMatch = officialByPark.get(item.parkId)?.get(item.coasterIdx);
         let height = item.min, minAccompanied = item.minAccompanied, source = "Current", fuzzy = false, changed = false;
 
@@ -390,7 +393,7 @@ app.post("/api/fill-heights", async (req, res) => {
         } else if (officialMatch) {
           source = "Official"; // already agrees with the current value — nothing to change
         } else if (item.min == null) {
-          const result = await lookupHeightFromWikipedia(item.name, () => false);
+          const result = await lookupHeightFromWikipedia(item.name, () => job.cancelled);
           if (result?.height != null) { height = result.height; source = "Wikipedia"; changed = true; }
           else source = "Not found";
         }
@@ -404,8 +407,10 @@ app.post("/api/fill-heights", async (req, res) => {
         broadcast({ type: "result", ...entry, found, notFound, total: job.total });
       }
 
-      console.log(`[fill-heights] Done — ${found} updated of ${work.length} checked`);
-      job.doneMessage = { type: "done", results, found, notFound, total: job.total };
+      console.log(job.cancelled
+        ? `[fill-heights] Stopped early — ${found} updated of ${results.length}/${work.length} checked`
+        : `[fill-heights] Done — ${found} updated of ${work.length} checked`);
+      job.doneMessage = { type: "done", results, found, notFound, total: job.total, cancelled: job.cancelled };
     } catch (err) {
       console.log(`[fill-heights] Error: ${err.message}`);
       job.doneMessage = { type: "error", message: err.message };
@@ -423,6 +428,16 @@ app.post("/api/fill-heights", async (req, res) => {
 app.get("/api/fill-heights/status", (req, res) => {
   if (!heightsJob) return res.json({ active: false });
   res.json({ active: !heightsJob.done, total: heightsJob.total, missingOnly: heightsJob.missingOnly, messages: heightsJob.messages, done: heightsJob.done, doneMessage: heightsJob.doneMessage });
+});
+
+// Stops the in-flight fill-heights job after its current coaster/park finishes
+// (cooperative — there's no way to interrupt an in-flight scrape/HTTP request
+// mid-flight, so this sets a flag the job loop checks between steps). Results
+// gathered so far still stream out normally via the "done" message.
+app.post("/api/fill-heights/cancel", (req, res) => {
+  if (!heightsJob || heightsJob.done) return res.json({ ok: false, message: "No active job." });
+  heightsJob.cancelled = true;
+  res.json({ ok: true });
 });
 
 // ── RCDB speed enrichment ────────────────────────────────────────────────────
