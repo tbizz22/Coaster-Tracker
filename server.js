@@ -207,7 +207,6 @@ const sleep = (ms, isAborted = () => false) => new Promise(resolve => {
 
 // Global rate limiter — enforces minimum 1200ms between any two Wikipedia requests
 let lastWpRequestAt = 0;
-let fillHeightsRunning = false;
 
 async function wpFetch(url, isAborted = () => false, retries = 3) {
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -274,23 +273,68 @@ async function lookupHeightFromWikipedia(coasterName, isAborted = () => false) {
 // One job now checks every available source instead of leaving the choice to the
 // user: for parks with an official height-chart URL, scrape it and trust it over
 // anything else (it also catches stale values on coasters that already have a
-// height); everything still missing afterward — and anything at a park with no
-// official source — falls back to Wikipedia.
+// height, unless `missingOnly` is set); everything still missing afterward — and
+// anything at a park with no official source — falls back to Wikipedia.
+//
+// The job itself is decoupled from any single HTTP connection: it's tracked in
+// `heightsJob` and keeps running to completion even if the initiating browser
+// tab navigates away or closes (the SSE response is just one of possibly several
+// listeners). A later request — same tab reopened, or a fresh tab — replays
+// everything sent so far and then keeps streaming, so no progress is lost.
+let heightsJob = null; // { total, missingOnly, messages, done, doneMessage, listeners }
+
+function attachToHeightsJob(job, send) {
+  send({ type: "start", total: job.total });
+  for (const m of job.messages) send(m);
+  if (job.done) send(job.doneMessage);
+  else job.listeners.add(send);
+}
+
 app.post("/api/fill-heights", async (req, res) => {
-  if (fillHeightsRunning || scrapeRunning) {
-    return res.status(409).json({ error: "A height-lookup job is already running. Please wait." });
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  let closed = false;
+  const send = data => {
+    if (closed || res.writableEnded) return;
+    try {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      if (data.type === "done" || data.type === "error") res.end();
+    } catch { closed = true; }
+  };
+  // res (not req!) — req's stream closes as soon as the POST body is fully read,
+  // long before the client actually disconnects. Losing this listener does NOT
+  // stop the job — it just stops streaming to this particular connection.
+  res.on("close", () => { closed = true; if (heightsJob) heightsJob.listeners.delete(send); });
+
+  // A job is already running — attach this connection to it instead of starting
+  // a second one (also covers the resume-after-navigating-away case).
+  if (heightsJob && !heightsJob.done) {
+    attachToHeightsJob(heightsJob, send);
+    return;
+  }
+
+  // No fill-heights job in flight, but the manual per-park scrape (`/api/scrape-heights`)
+  // is using the browser right now — refuse rather than run two scrapes at once.
+  if (scrapeRunning) {
+    send({ type: "error", message: "A scrape job is already running. Please wait." });
+    return;
   }
 
   const parks = req.body.parks;
-  if (!Array.isArray(parks)) return res.status(400).json({ error: "No parks data provided." });
+  if (!Array.isArray(parks)) { send({ type: "error", message: "No parks data provided." }); return; }
+  const missingOnly = !!req.body.missingOnly;
 
   // Work list: coasters missing a height everywhere, plus — at parks with an
-  // official source — every coaster, so the scrape can also correct stale values.
+  // official source, unless missingOnly is set — every coaster, so the scrape
+  // can also correct stale values instead of only filling blanks.
   const work = [];
   for (const park of parks) {
     for (let ci = 0; ci < park.coasters.length; ci++) {
       const c = park.coasters[ci];
-      if (c.min == null || park.officialUrl) {
+      if (c.min == null || (!missingOnly && park.officialUrl)) {
         work.push({
           parkId: park.id, parkName: park.name, coasterIdx: ci, name: c.name, scale: c.scale,
           min: c.min ?? null, minAccompanied: c.minAccompanied ?? null, officialUrl: park.officialUrl || null,
@@ -300,96 +344,85 @@ app.post("/api/fill-heights", async (req, res) => {
   }
 
   if (work.length === 0) {
-    return res.json({ results: [], message: "All coasters already have height data." });
+    send({ type: "done", results: [], found: 0, notFound: 0, total: 0 });
+    return;
   }
 
-  // Switch to SSE so the browser receives each result as it arrives
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
-
-  // Track client disconnect so a closed browser tab doesn't leave the job (and flag) stuck
-  let aborted = false;
-  // res (not req!) — req's stream closes as soon as the POST body is fully
-  // read, long before the client actually disconnects; res only closes when
-  // the underlying connection really does.
-  res.on("close", () => { aborted = true; });
-
-  const send = data => {
-    if (aborted || res.writableEnded) return;
-    try { res.write(`data: ${JSON.stringify(data)}\n\n`); }
-    catch { aborted = true; }
-  };
-
-  fillHeightsRunning = true;
+  const job = { total: work.length, missingOnly, messages: [], done: false, doneMessage: null, listeners: new Set([send]) };
+  heightsJob = job;
   scrapeRunning = true; // fill-heights now drives the same scraper — serialize with the manual per-park scrape
-  console.log(`[fill-heights] Starting — ${work.length} coasters to check`);
 
-  let found = 0, notFound = 0;
-  const results = [];
+  const broadcast = data => { job.messages.push(data); for (const l of job.listeners) l(data); };
+  broadcast({ type: "start", total: job.total });
+  console.log(`[fill-heights] Starting — ${work.length} coasters to check${missingOnly ? " (missing only)" : ""}`);
 
-  try {
-    send({ type: "start", total: work.length });
-
-    // Scrape each distinct official-source park once up front, indexed by coasterIdx.
-    const officialByPark = new Map();
-    const officialParkIds = [...new Set(work.filter(w => w.officialUrl).map(w => w.parkId))];
-    for (const parkId of officialParkIds) {
-      if (aborted) break;
-      const park = parks.find(p => p.id === parkId);
-      try {
-        const scraped = await scrapeParkHeights(park.officialUrl);
-        const { matched } = matchScrapeToPark(park, scraped);
-        officialByPark.set(parkId, new Map(matched.map(m => [m.coasterIdx, m])));
-      } catch (err) {
-        console.log(`[fill-heights] Official scrape failed for ${park.name}: ${err.message}`);
-        officialByPark.set(parkId, new Map());
-      }
-    }
-
-    for (const item of work) {
-      if (aborted) { console.log("[fill-heights] Client disconnected — aborting"); break; }
-
-      const officialMatch = officialByPark.get(item.parkId)?.get(item.coasterIdx);
-      let height = item.min, minAccompanied = item.minAccompanied, source = "Current", fuzzy = false, changed = false;
-
-      if (officialMatch && officialMatch.changed) {
-        height = officialMatch.scraped.min;
-        minAccompanied = officialMatch.scraped.minAccompanied;
-        source = "Official";
-        fuzzy = officialMatch.fuzzy;
-        changed = true;
-      } else if (officialMatch) {
-        source = "Official"; // already agrees with the current value — nothing to change
-      } else if (item.min == null) {
-        const result = await lookupHeightFromWikipedia(item.name, () => aborted);
-        if (result?.height != null) { height = result.height; source = "Wikipedia"; changed = true; }
-        else source = "Not found";
+  // Runs detached from this request/response — it keeps going even if every
+  // listener (including this one) disconnects, so the job survives navigation.
+  (async () => {
+    let found = 0, notFound = 0;
+    const results = [];
+    try {
+      // Scrape each distinct official-source park once up front, indexed by coasterIdx.
+      const officialByPark = new Map();
+      const officialParkIds = [...new Set(work.filter(w => w.officialUrl).map(w => w.parkId))];
+      for (const parkId of officialParkIds) {
+        const park = parks.find(p => p.id === parkId);
+        try {
+          const scraped = await scrapeParkHeights(park.officialUrl);
+          const { matched } = matchScrapeToPark(park, scraped);
+          officialByPark.set(parkId, new Map(matched.map(m => [m.coasterIdx, m])));
+        } catch (err) {
+          console.log(`[fill-heights] Official scrape failed for ${park.name}: ${err.message}`);
+          officialByPark.set(parkId, new Map());
+        }
       }
 
-      const entry = {
-        parkId: item.parkId, parkName: item.parkName, coasterIdx: item.coasterIdx, coasterName: item.name,
-        currentMin: item.min, height, minAccompanied, source, fuzzy, changed, scale: item.scale ?? null,
-      };
-      results.push(entry);
-      if (changed) found++; else if (height == null) notFound++;
-      send({ type: "result", ...entry, found, notFound, total: work.length });
-    }
+      for (const item of work) {
+        const officialMatch = officialByPark.get(item.parkId)?.get(item.coasterIdx);
+        let height = item.min, minAccompanied = item.minAccompanied, source = "Current", fuzzy = false, changed = false;
 
-    if (!aborted) {
+        if (officialMatch && officialMatch.changed) {
+          height = officialMatch.scraped.min;
+          minAccompanied = officialMatch.scraped.minAccompanied;
+          source = "Official";
+          fuzzy = officialMatch.fuzzy;
+          changed = true;
+        } else if (officialMatch) {
+          source = "Official"; // already agrees with the current value — nothing to change
+        } else if (item.min == null) {
+          const result = await lookupHeightFromWikipedia(item.name, () => false);
+          if (result?.height != null) { height = result.height; source = "Wikipedia"; changed = true; }
+          else source = "Not found";
+        }
+
+        const entry = {
+          parkId: item.parkId, parkName: item.parkName, coasterIdx: item.coasterIdx, coasterName: item.name,
+          currentMin: item.min, height, minAccompanied, source, fuzzy, changed, scale: item.scale ?? null,
+        };
+        results.push(entry);
+        if (changed) found++; else if (height == null) notFound++;
+        broadcast({ type: "result", ...entry, found, notFound, total: job.total });
+      }
+
       console.log(`[fill-heights] Done — ${found} updated of ${work.length} checked`);
-      send({ type: "done", results, found, notFound, total: work.length });
+      job.doneMessage = { type: "done", results, found, notFound, total: job.total };
+    } catch (err) {
+      console.log(`[fill-heights] Error: ${err.message}`);
+      job.doneMessage = { type: "error", message: err.message };
+    } finally {
+      job.done = true;
+      broadcast(job.doneMessage);
+      scrapeRunning = false;
     }
-  } catch (err) {
-    console.log(`[fill-heights] Error: ${err.message}`);
-    send({ type: "error", message: err.message });
-  } finally {
-    // Always release the locks, no matter how the request ended
-    fillHeightsRunning = false;
-    scrapeRunning = false;
-    if (!res.writableEnded) res.end();
-  }
+  })();
+});
+
+// Lets a freshly (re)mounted tab find out whether a fill-heights job is still
+// running — or already finished — without opening a new SSE stream, so the UI
+// can resume showing progress after the user navigated away and back.
+app.get("/api/fill-heights/status", (req, res) => {
+  if (!heightsJob) return res.json({ active: false });
+  res.json({ active: !heightsJob.done, total: heightsJob.total, missingOnly: heightsJob.missingOnly, messages: heightsJob.messages, done: heightsJob.done, doneMessage: heightsJob.doneMessage });
 });
 
 // ── RCDB speed enrichment ────────────────────────────────────────────────────

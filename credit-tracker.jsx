@@ -2101,11 +2101,40 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
   // speeds: { results, found, notFound, total, error }
   // heights: { results, found, notFound, total, error }
   const [enrichResults,    setEnrichResults]    = useState(null);
-  const [enrichFields,     setEnrichFields]     = useState({ stats: true, images: false, heights: true });
+  const [enrichFields,     setEnrichFields]     = useState({ stats: true, images: false, heights: true, heightsMissingOnly: false });
 
   const nullCount       = parks.reduce((s, p) => s + p.coasters.filter(c => c.min == null).length, 0);
   const incompleteStats = parks.reduce((s, p) => s + p.coasters.filter(c => !c.defunct && (c.speedMph == null || c.heightFt == null || c.yearOpened == null || !c.manufacturer)).length, 0);
   const incompleteImgs  = parks.reduce((s, p) => s + p.coasters.filter(c => !c.defunct && !c.imageUrl).length, 0);
+
+  // The fill-heights job runs server-side independent of any one connection (see
+  // server.js), so it survives navigating away from this tab. On mount, check
+  // whether a job is already in flight (or just finished) and resume showing its
+  // progress instead of leaving the UI looking idle while work continues.
+  useEffect(() => {
+    let cancelled = false, pollId;
+    const hydrate = status => {
+      if (cancelled || !status) return;
+      const heights = { results: [], found: 0, notFound: 0, total: status.total };
+      for (const m of status.messages || []) {
+        if (m.type === "result") { heights.results.push(m); heights.found = m.found; heights.notFound = m.notFound; }
+      }
+      setEnrichRunning(status.active);
+      setEnrichResults(prev => ({ speeds: prev?.speeds ?? null, heights, finished: !status.active }));
+    };
+    (async () => {
+      const status = await apiGet("/api/fill-heights/status").catch(() => null);
+      if (cancelled || !status?.active) return;
+      hydrate(status);
+      pollId = setInterval(async () => {
+        const s = await apiGet("/api/fill-heights/status").catch(() => null);
+        if (cancelled || !s) return;
+        hydrate(s);
+        if (!s.active) clearInterval(pollId);
+      }, 1500);
+    })();
+    return () => { cancelled = true; if (pollId) clearInterval(pollId); };
+  }, []);
 
   // Run whichever enrichment endpoints are selected, track both done before finishing.
   function handleEnrich() {
@@ -2129,7 +2158,7 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
     }
 
     if (wantHeights) {
-      postSSE("/api/fill-heights", { parks }, msg => {
+      postSSE("/api/fill-heights", { parks, missingOnly: enrichFields.heightsMissingOnly }, msg => {
         if (msg.type === "start")       setEnrichResults(prev => ({ ...prev, heights: { results: [], found: 0, notFound: 0, total: msg.total } }));
         else if (msg.type === "result") setEnrichResults(prev => ({ ...prev, heights: { results: [...(prev?.heights?.results||[]), msg], found: msg.found, notFound: msg.notFound, total: msg.total } }));
         else if (msg.type === "done")   { setEnrichResults(prev => ({ ...prev, heights: { results: msg.results, found: msg.found, notFound: msg.notFound, total: msg.total } })); markDone(); }
@@ -2206,6 +2235,12 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
                 Heights · {nullCount} missing
               </label>
             </div>
+            {enrichFields.heights && (
+              <label style={{ display:"flex", alignItems:"center", gap:6, marginTop:T.s2, cursor: enrichRunning ? "default" : "pointer", fontSize:T.fxs, color: enrichRunning ? T.textFaint : T.textFaint, userSelect:"none" }}>
+                <input type="checkbox" checked={enrichFields.heightsMissingOnly} disabled={enrichRunning} onChange={e => setEnrichFields(f => ({ ...f, heightsMissingOnly: e.target.checked }))} style={{ accentColor:T.accent }}/>
+                Only fill missing heights — skip re-checking values already on file
+              </label>
+            )}
           </div>
           {actionBtn(handleEnrich, enrichRunning || enrichIncomplete === 0 || nothingSelected, enrichProgress)}
         </div>
