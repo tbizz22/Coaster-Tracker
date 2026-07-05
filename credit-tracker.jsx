@@ -290,6 +290,7 @@ const MANUFACTURER_OPTIONS = [
   "Dinn Corporation", "RMC", "E&F Miler Industries", "Wisdom Rides",
   "Reverchon", "Pinfari", "Mondial", "Larson International", "Setpoint",
 ];
+const MFR_DATALIST_ID = "mfr-options";
 function splitManufacturerModel(typeStr) {
   const s = String(typeStr || "").trim();
   if (!s) return { manufacturer: "", model: "" };
@@ -2479,11 +2480,10 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
       {Object.entries(PARK_FAMILIES).map(([code,info]) => <option key={code} value={code}>{code} — {info.label}</option>)}
     </select>
   );
-  // The dense add/edit grid rows use one combined free-text "Type" field (split
-  // into manufacturer/model via splitManufacturerModel on save) — there's no
-  // room in an 8-column grid for two inputs. The coaster detail modal offers
-  // separate Manufacturer/Model fields for anyone who wants precise control.
-  const blankCoaster = { name:"", typeText:"", min:"", minAccompanied:"", speed:"", racing:false, defunct:false };
+  // Manufacturer/model are real separate fields here too (matches CoasterModal) —
+  // a `<datalist>` (see MFR_DATALIST_ID) offers the canonical abbreviations as
+  // suggestions while still accepting free text for anything not in the list.
+  const blankCoaster = { name:"", manufacturer:"", model:"", min:"", minAccompanied:"", speed:"", racing:false, defunct:false };
 
   const [selectedId,   setSelectedId]   = useState(lockToParkId || null);
   const [addingPark,   setAddingPark]   = useState(false);
@@ -2666,22 +2666,27 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
     if (!coasterForm.name.trim()) { setCoasterError("Name is required."); return; }
     const v = validateHeights(coasterForm.min, coasterForm.minAccompanied);
     if (v.err) { setCoasterError(v.err); return; }
-    const { manufacturer, model } = splitManufacturerModel(coasterForm.typeText);
-    onAddCoaster(selectedPark.id, { name:coasterForm.name, manufacturer, model, min:v.h, minAccompanied:coasterForm.minAccompanied, speedMph:coasterForm.speed, racing:coasterForm.racing, defunct:coasterForm.defunct });
+    onAddCoaster(selectedPark.id, { name:coasterForm.name, manufacturer:coasterForm.manufacturer.trim(), model:coasterForm.model.trim(), min:v.h, minAccompanied:coasterForm.minAccompanied, speedMph:coasterForm.speed, racing:coasterForm.racing, defunct:coasterForm.defunct });
     setCoasterForm(blankCoaster);
     setCoasterError("");
   }
 
   // ── Coaster edit save ──
+  // Merges onto the *original* coaster rather than building a bare object from
+  // just the edited fields — a prior version of this handler passed only the
+  // fields this form knows about, which silently wiped material/style/heightFt/
+  // yearOpened/imageUrl/rcdb* on every single edit (updateCoaster replaces the
+  // whole record, it doesn't merge). Same failure shape as the earlier
+  // credits-wiped-on-edit bug, just for metadata instead of the coaster id.
   function handleSaveCoaster(e) {
     e.preventDefault();
     if (!editCoaster.draft.name.trim()) return;
     const d = editCoaster.draft;
     const v = validateHeights(d.min, d.minAccompanied);
     if (v.err) { setEditCoaster(ec => ({ ...ec, err:v.err })); return; }
+    const orig = selectedPark.coasters[editCoaster.idx];
     // In-place update (migrates credits if the name changes) — no delete+re-add.
-    const { manufacturer, model } = splitManufacturerModel(d.typeText);
-    onUpdateCoaster(selectedPark.id, editCoaster.idx, { id:d.id, name:d.name, manufacturer, model, min:v.h, minAccompanied:d.minAccompanied, speedMph:d.speed, racing:d.racing, defunct:d.defunct });
+    onUpdateCoaster(selectedPark.id, editCoaster.idx, { ...orig, id:d.id, name:d.name, manufacturer:d.manufacturer.trim(), model:d.model.trim(), min:v.h, minAccompanied:d.minAccompanied, speedMph:d.speed, racing:d.racing, defunct:d.defunct });
     setEditCoaster(null);
   }
 
@@ -2701,9 +2706,17 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
       style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"10px 12px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", width:"100%", ...extra }}/>
   );
 
+  // Manufacturer input backed by a shared <datalist> of the canonical
+  // abbreviations (MANUFACTURER_OPTIONS) — suggests them but still accepts any
+  // free text, so RCDB-import spellings or new/rare manufacturers aren't blocked.
+  const mfrInp = (val, onChange, style={}) => (
+    <input value={val} onChange={onChange} placeholder="Manufacturer" list={MFR_DATALIST_ID}
+      style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"5px 8px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", ...style }}/>
+  );
+
   // ── Mobile coaster list (cards + expand-to-edit) ──
   const mobileCoasterList = (park) => {
-    const openEdit = (c, i) => setEditCoaster({ idx:i, draft:{ id:c.id, name:c.name, typeText:coasterType(c), min:c.min==null?"":String(c.min), minAccompanied:c.minAccompanied==null?"":String(c.minAccompanied), speed:c.speedMph==null?"":String(c.speedMph), racing:!!c.racing, defunct:!!c.defunct } });
+    const openEdit = (c, i) => setEditCoaster({ idx:i, draft:{ id:c.id, name:c.name, manufacturer:c.manufacturer||"", model:c.model||"", min:c.min==null?"":String(c.min), minAccompanied:c.minAccompanied==null?"":String(c.minAccompanied), speed:c.speedMph==null?"":String(c.speedMph), racing:!!c.racing, defunct:!!c.defunct } });
     const numInput = (val, onChange, placeholder, extra={}) => (
       <input type="number" value={val} onChange={onChange} placeholder={placeholder}
         style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"10px 0", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%", ...extra }}/>
@@ -2712,6 +2725,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
 
     return (
       <div style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r4, overflow:"hidden" }}>
+        <datalist id={MFR_DATALIST_ID}>{MANUFACTURER_OPTIONS.map(m => <option key={m} value={m}/>)}</datalist>
         {/* Header */}
         <div style={{ padding:"10px 14px", background:T.panel2, borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>Coasters <span style={{ fontWeight:400, color:T.textFaint }}>({park.coasters.length})</span></div>
@@ -2766,9 +2780,9 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                 {fieldLabel("Name")}
                 {mInp(editCoaster.draft.name, e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,name:e.target.value}})), "Name")}
               </div>
-              <div style={{ marginBottom:10 }}>
-                {fieldLabel("Type")}
-                {mInp(editCoaster.draft.typeText, e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,typeText:e.target.value}})), "e.g. B&M Steel Sit Down")}
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:10 }}>
+                <div>{fieldLabel("Manufacturer")}{mfrInp(editCoaster.draft.manufacturer, e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,manufacturer:e.target.value}})), {width:"100%", boxSizing:"border-box", padding:"10px 12px", borderRadius:T.r3})}</div>
+                <div>{fieldLabel("Model")}{mInp(editCoaster.draft.model, e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,model:e.target.value}})), "e.g. Hyper")}</div>
               </div>
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:10 }}>
                 <div>{fieldLabel("Min ht\"")}  {numInput(editCoaster.draft.min,           e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,min:e.target.value}})),           "—")}</div>
@@ -2812,7 +2826,10 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
         <form onSubmit={handleAddCoaster} style={{ padding:"14px", borderTop:`1px solid ${T.border}`, background:T.panel2 }}>
           <div style={{ fontSize:T.fxs, fontWeight:T.wBold, color:T.textFaint, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:10 }}>Add Coaster</div>
           <div style={{ marginBottom:8 }}>{mInp(coasterForm.name, e=>setCoasterForm(f=>({...f,name:e.target.value})), "Coaster name")}</div>
-          <div style={{ marginBottom:8 }}>{mInp(coasterForm.typeText, e=>setCoasterForm(f=>({...f,typeText:e.target.value})), "Type (optional)")}</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+            {mfrInp(coasterForm.manufacturer, e=>setCoasterForm(f=>({...f,manufacturer:e.target.value})), {width:"100%", boxSizing:"border-box", padding:"10px 12px", borderRadius:T.r3})}
+            {mInp(coasterForm.model, e=>setCoasterForm(f=>({...f,model:e.target.value})), "Model (optional)")}
+          </div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:10 }}>
             <input type="number" min={20} max={96}  value={coasterForm.min}           onChange={e=>setCoasterForm(f=>({...f,min:e.target.value}))}           placeholder="Min ht" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"10px 0", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%" }}/>
             <input type="number" min={0}  max={96}  value={coasterForm.minAccompanied} onChange={e=>setCoasterForm(f=>({...f,minAccompanied:e.target.value}))} placeholder="Acc ht" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"10px 0", color:"#fbbf24", fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%" }}/>
@@ -3252,9 +3269,11 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                 </div>
               )}
 
+              <datalist id={MFR_DATALIST_ID}>{MANUFACTURER_OPTIONS.map(m => <option key={m} value={m}/>)}</datalist>
+
               {/* Column headers */}
-              <div style={{ display:"grid", gridTemplateColumns:"1.7fr 1fr 48px 48px 50px 46px 46px 28px", padding:"6px 14px", ...labelCss, color:T.textGhost, gap:6, borderBottom:`1px solid ${T.hair}` }}>
-                <div>Name</div><div>Type</div>
+              <div style={{ display:"grid", gridTemplateColumns:"1.5fr 0.65fr 0.75fr 48px 48px 50px 46px 46px 28px", padding:"6px 14px", ...labelCss, color:T.textGhost, gap:6, borderBottom:`1px solid ${T.hair}` }}>
+                <div>Name</div><div>Mfr</div><div>Model</div>
                 <div style={{textAlign:"center"}} title="Minimum height to ride alone">Min</div>
                 <div style={{textAlign:"center"}} title="Minimum height with a supervising companion">Acc</div>
                 <div style={{textAlign:"center"}} title="Top speed (mph)">Speed</div>
@@ -3268,9 +3287,10 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
               {selectedPark.coasters.map((c, i) => (
                 editCoaster?.idx === i ? (
                   /* Inline edit row */
-                  <form key={i} onSubmit={handleSaveCoaster} style={{ display:"grid", gridTemplateColumns:"1.7fr 1fr 48px 48px 50px 46px 46px 28px", padding:"6px 14px", borderBottom:`1px solid ${T.hair}`, gap:6, alignItems:"center", background:"#1e293b22" }}>
+                  <form key={i} onSubmit={handleSaveCoaster} style={{ display:"grid", gridTemplateColumns:"1.5fr 0.65fr 0.75fr 48px 48px 50px 46px 46px 28px", padding:"6px 14px", borderBottom:`1px solid ${T.hair}`, gap:6, alignItems:"center", background:"#1e293b22" }}>
                     {inp(editCoaster.draft.name, e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,name:e.target.value}})), "Name")}
-                    {inp(editCoaster.draft.typeText, e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,typeText:e.target.value}})), "Type")}
+                    {mfrInp(editCoaster.draft.manufacturer, e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,manufacturer:e.target.value}})), {width:"100%", boxSizing:"border-box"})}
+                    {inp(editCoaster.draft.model, e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,model:e.target.value}})), "Model")}
                     <input type="number" min={20} max={96} value={editCoaster.draft.min} onChange={e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,min:e.target.value}}))} title="Min height to ride alone" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"5px 3px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%" }}/>
                     <input type="number" min={0} max={96} value={editCoaster.draft.minAccompanied} onChange={e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,minAccompanied:e.target.value}}))} title="Min height with a supervising companion (0 = any height with an adult)" placeholder="—" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"5px 3px", color:"#fbbf24", fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%" }}/>
                     <input type="number" min={0} max={150} value={editCoaster.draft.speed} onChange={e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,speed:e.target.value}}))} title="Top speed (mph)" placeholder="—" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"5px 3px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%" }}/>
@@ -3288,16 +3308,17 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                   </form>
                 ) : (
                   /* Normal row */
-                  <div key={i} style={{ display:"grid", gridTemplateColumns:"1.7fr 1fr 48px 48px 50px 46px 46px 28px", padding:"7px 14px", borderBottom: i<selectedPark.coasters.length-1?`1px solid ${T.hair}`:"none", background:i%2===0?"transparent":T.zebra, alignItems:"center", gap:6 }}
+                  <div key={i} style={{ display:"grid", gridTemplateColumns:"1.5fr 0.65fr 0.75fr 48px 48px 50px 46px 46px 28px", padding:"7px 14px", borderBottom: i<selectedPark.coasters.length-1?`1px solid ${T.hair}`:"none", background:i%2===0?"transparent":T.zebra, alignItems:"center", gap:6 }}
                     onMouseEnter={e=>e.currentTarget.style.background="#1e293b22"}
                     onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"transparent":T.zebra}
                   >
-                    <button onClick={()=>setEditCoaster({idx:i,draft:{id:c.id,name:c.name,typeText:coasterType(c),min:c.min==null?"":String(c.min),minAccompanied:c.minAccompanied==null?"":String(c.minAccompanied),speed:c.speedMph==null?"":String(c.speedMph),racing:!!c.racing,defunct:!!c.defunct}})} style={{ background:"none", border:"none", padding:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:5 }}>
+                    <button onClick={()=>setEditCoaster({idx:i,draft:{id:c.id,name:c.name,manufacturer:c.manufacturer||"",model:c.model||"",min:c.min==null?"":String(c.min),minAccompanied:c.minAccompanied==null?"":String(c.minAccompanied),speed:c.speedMph==null?"":String(c.speedMph),racing:!!c.racing,defunct:!!c.defunct}})} style={{ background:"none", border:"none", padding:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:5 }}>
                       <span style={{ fontSize:T.fbase, fontWeight:T.wSemi, color: c.defunct?T.textMid:T.text, textDecoration: c.defunct?"line-through":"none" }}>{c.name}</span>
                       {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px" }}>⇄</span>}
                       {c.defunct && <DefunctBadge/>}
                     </button>
-                    <div style={{ fontSize:T.fsm, color:T.textFaint }}>{coasterType(c)}</div>
+                    <div style={{ fontSize:T.fsm, color:T.textFaint, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={c.manufacturer||""}>{abbrMfr(c.manufacturer)}</div>
+                    <div style={{ fontSize:T.fsm, color:T.textFaint, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.model||""}</div>
                     <div style={{textAlign:"center"}}><HtBadge min={c.min}/></div>
                     <div style={{textAlign:"center", fontSize:T.fsm, fontWeight:T.wBold, color: c.minAccompanied!=null?"#fbbf24":T.textGhost}}>{c.minAccompanied!=null?`${c.minAccompanied}"`:"—"}</div>
                     <div style={{textAlign:"center", fontSize:T.fsm, color: c.speedMph!=null?T.textMid:T.textGhost}}>{c.speedMph!=null?`${c.speedMph}`:"—"}</div>
@@ -3309,9 +3330,10 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
               ))}
 
               {/* Add coaster form */}
-              <form onSubmit={handleAddCoaster} style={{ display:"grid", gridTemplateColumns:"1.7fr 1fr 48px 48px 50px 46px 46px 28px", padding:"8px 14px", borderTop:`1px solid ${T.border}`, gap:6, alignItems:"center", background:T.panel2 }}>
+              <form onSubmit={handleAddCoaster} style={{ display:"grid", gridTemplateColumns:"1.5fr 0.65fr 0.75fr 48px 48px 50px 46px 46px 28px", padding:"8px 14px", borderTop:`1px solid ${T.border}`, gap:6, alignItems:"center", background:T.panel2 }}>
                 {inp(coasterForm.name, e=>setCoasterForm(f=>({...f,name:e.target.value})), "Coaster name")}
-                {inp(coasterForm.typeText, e=>setCoasterForm(f=>({...f,typeText:e.target.value})), "Type")}
+                {mfrInp(coasterForm.manufacturer, e=>setCoasterForm(f=>({...f,manufacturer:e.target.value})), {width:"100%", boxSizing:"border-box"})}
+                {inp(coasterForm.model, e=>setCoasterForm(f=>({...f,model:e.target.value})), "Model")}
                 <input type="number" min={20} max={96} value={coasterForm.min} onChange={e=>setCoasterForm(f=>({...f,min:e.target.value}))} placeholder='Min' title="Min height to ride alone" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"5px 3px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%" }}/>
                 <input type="number" min={0} max={96} value={coasterForm.minAccompanied} onChange={e=>setCoasterForm(f=>({...f,minAccompanied:e.target.value}))} placeholder="Acc" title="Min height with a supervising companion (0 = any height with an adult)" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"5px 3px", color:"#fbbf24", fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%" }}/>
                 <input type="number" min={0} max={150} value={coasterForm.speed} onChange={e=>setCoasterForm(f=>({...f,speed:e.target.value}))} placeholder="mph" title="Top speed (mph)" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"5px 3px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%" }}/>

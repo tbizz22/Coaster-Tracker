@@ -155,16 +155,14 @@ detail modal", "Coaster import = delta merge", "Top-bar rider pills deep-link",
 
 ## Nice-to-haves
 
-- **Settings area to scrape/fill park map coordinates.** Park lat/long today lives in
-  a hardcoded `PARK_COORDS_BY_NORM` lookup (keyed via `normParkName()`) rather than a
-  per-park editable/scraped field — adding a park to the map requires a code change,
-  not a Settings action. Add a Settings ▸ Parks (or a new Map sub-tab) flow that
-  geocodes a park's coordinates automatically from its name/address via **Nominatim/
-  OpenStreetMap** (decided: free, no API key — accept the rate limit/precision
-  tradeoff), reviewed/applied like the existing height-scrape review panel, plus a
-  manual lat/long override field for parks the geocoder gets wrong. Coordinates need
-  to move from the static map into the `parks` table/schema so they're per-household-
-  editable data instead of hardcoded.
+- **Settings area to auto-geocode park map coordinates.** Correction to an earlier
+  note here: `parks.lat`/`lng` are already real per-household columns with a manual
+  hand-entry UI (desktop park edit form) — `PARK_COORDS_BY_NORM` is only a fallback
+  for parks that haven't set one. What's still missing is the **auto-geocode** part:
+  a Settings ▸ Parks flow that looks up a park's coordinates from its name/address via
+  **Nominatim/OpenStreetMap** (decided: free, no API key — accept the rate limit/
+  precision tradeoff), reviewed/applied like the existing height-scrape review panel.
+  Also: the mobile add/edit park form has no lat/lng inputs at all (desktop-only today).
 ---
 
 ## Done (this build) — for reference
