@@ -165,7 +165,7 @@ async function loadHouseholdData() {
     id: r.id, name: r.name, height: r.height, color: r.color, needsCompanion: r.needs_companion,
   }));
   const parks = (parkRows ?? []).map(p => ({
-    id: p.id, name: p.name, tag: p.tag, region: p.region_code, badge: p.badge, family: p.family,
+    id: p.id, name: p.name, tag: p.tag, region: p.region_code, badges: p.badges || [], family: p.family,
     officialUrl: p.official_url, lat: p.lat, lng: p.lng,
     coasters: coastersByPark.get(p.id) ?? [],
   }));
@@ -195,7 +195,7 @@ async function saveRiders(riders) {
 async function saveParks(parks) {
   const parkRows = parks.map((p, i) => ({
     id: p.id, household_id: HOUSEHOLD_ID, name: p.name, tag: p.tag ?? null,
-    region_code: p.region ?? null, badge: p.badge ?? null, family: p.family ?? null,
+    region_code: p.region ?? null, badges: p.badges ?? [], family: p.family ?? null,
     official_url: p.officialUrl ?? null, lat: p.lat ?? null, lng: p.lng ?? null, sort: i,
   }));
   if (parkRows.length) await supabase.from("parks").upsert(parkRows);
@@ -489,8 +489,7 @@ function defunctCoasters(p) { return (p.coasters || []).filter(c => c.defunct); 
 const REGION_COLORS = { NE:"#2FA8FF", SE:"#4ade80", MW:"#facc15", TX:"#fb923c", CA:"#f472b6", INT:"#a78bfa" };
 function regionColor(code) { return REGION_COLORS[code] || "#94a3b8"; }
 
-// Park-family / chain ownership groups (replaces the old freeform `badge` for this
-// purpose — `badge` stays available for one-off labels like "🏠 Home Park").
+// Park-family / chain ownership groups.
 const PARK_FAMILIES = {
   SF:  { label: "Six Flags",        color: "#ef4444" },
   CF:  { label: "Cedar Fair",       color: "#22c55e" },
@@ -499,6 +498,15 @@ const PARK_FAMILIES = {
   IND: { label: "Independent",      color: "#94a3b8" },
 };
 function familyInfo(code) { return PARK_FAMILIES[code] || null; }
+
+// Multi-select park badges — independent of `family` (chain ownership) and
+// `region`; a park can carry any combination (e.g. both Home + Pass Holder).
+const BADGE_OPTIONS = {
+  home:      { label: "Home Park",   icon: "🏠", color: "#fbbf24" },
+  pass:      { label: "Pass Holder", icon: "🎫", color: "#22d3ee" },
+  favorite:  { label: "Favorite",    icon: "⭐", color: "#f472b6" },
+};
+function badgeInfo(code) { return BADGE_OPTIONS[code] || null; }
 
 // Known park coordinates [lat, lng]. A park's own lat/lng (if set in settings)
 // always wins; this is the seed fallback so the map works out of the box.
@@ -1040,7 +1048,7 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
     e.preventDefault();
     if (!addForm.name.trim()) { setAddError("Name is required."); return; }
     if (!addForm.tag.trim())  { setAddError("Airport code is required."); return; }
-    const park = { id: uid(), name: addForm.name.trim(), tag: addForm.tag.trim().toUpperCase(), region: addForm.region, badge: "", family: addForm.family || undefined, coasters: [] };
+    const park = { id: uid(), name: addForm.name.trim(), tag: addForm.tag.trim().toUpperCase(), region: addForm.region, badges: [], family: addForm.family || undefined, coasters: [] };
     onAddPark(park);
     setAddForm({ name:"", tag:"", region: Object.keys(REGIONS)[0] || "NE", family:"" });
     setAddError(""); setAddingPark(false);
@@ -1131,8 +1139,11 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
                         {p.family && familyInfo(p.family) && (
                           <span title={familyInfo(p.family).label} style={{ fontSize:T.fxs, fontWeight:T.wBold, color:familyInfo(p.family).color, background:familyInfo(p.family).color+"1a", border:`1px solid ${familyInfo(p.family).color}44`, borderRadius:T.r2, padding:"0 4px", flexShrink:0 }}>{p.family}</span>
                         )}
-                        <span style={{ fontSize:T.fxs, color:T.textFaint, fontWeight:T.wSemi, flexShrink:0 }}>{p.tag}</span>
+                        <span style={{ fontSize:T.fxs, color:T.textFaint, fontWeight:400, flexShrink:0 }}>{p.tag}</span>
                         <span style={{ fontSize:T.fbase, fontWeight: sel ? T.wBold : 400, color: sel ? T.ink : T.textMid, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</span>
+                        {(p.badges||[]).map(code => badgeInfo(code) && (
+                          <span key={code} title={badgeInfo(code).label} style={{ fontSize:T.fxs, flexShrink:0 }}>{badgeInfo(code).icon}</span>
+                        ))}
                       </div>
                     </div>
                     <div style={{ flexShrink:0, marginLeft:8 }}><ParkStat p={p}/></div>
@@ -1200,6 +1211,9 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
               <span title={familyInfo(park.family).label} style={{ fontSize:T.fxs, fontWeight:T.wBold, color:familyInfo(park.family).color, background:familyInfo(park.family).color+"1a", border:`1px solid ${familyInfo(park.family).color}44`, borderRadius:T.r2, padding:"1px 5px" }}>{park.family}</span>
             )}
             <div style={{ fontSize:T.flg, fontWeight:T.wHeavy, color:T.ink }}>{park.name}</div>
+            {(park.badges||[]).map(code => badgeInfo(code) && (
+              <span key={code} title={badgeInfo(code).label} style={{ fontSize:T.fbase }}>{badgeInfo(code).icon}</span>
+            ))}
           </div>
           <div style={{ fontSize:T.fsm, color:T.textLo, marginTop:2 }}>
             {lensRider
@@ -2473,7 +2487,18 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
 // park list + multi-park batch tools — used to fold inline editing into
 // Plan mode instead of requiring a trip to Settings ▸ Parks & Coasters.
 function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaster, onUpdateCoaster, onDeleteCoaster, onMergeImport, lockToParkId }) {
-  const blankPark    = { name:"", tag:"", region:"NE", badge:"", family:"" };
+  const blankPark    = { name:"", tag:"", region:"NE", badges:[], family:"" };
+  const toggleBadge = (badges, code) => badges.includes(code) ? badges.filter(b => b !== code) : [...badges, code];
+  const badgeCheckboxes = (badges, onChange) => (
+    <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+      {Object.entries(BADGE_OPTIONS).map(([code, info]) => (
+        <label key={code} style={{ display:"flex", alignItems:"center", gap:5, fontSize:T.fsm, color:T.textLo, cursor:"pointer", userSelect:"none" }}>
+          <input type="checkbox" checked={badges.includes(code)} onChange={()=>onChange(toggleBadge(badges, code))} style={{ accentColor:info.color }}/>
+          {info.icon} {info.label}
+        </label>
+      ))}
+    </div>
+  );
   const familySelect = (value, onChange) => (
     <select value={value||""} onChange={onChange} style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"6px 7px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none" }}>
       <option value="">—</option>
@@ -2522,7 +2547,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
   // Sync draft + reset lookup when selection changes
   useEffect(() => {
     if (selectedPark) {
-      setParkDraft({ name:selectedPark.name, tag:selectedPark.tag, region:selectedPark.region, badge:selectedPark.badge||"", family:selectedPark.family||"", officialUrl:selectedPark.officialUrl||"", lat:selectedPark.lat??"", lng:selectedPark.lng??"" });
+      setParkDraft({ name:selectedPark.name, tag:selectedPark.tag, region:selectedPark.region, badges:selectedPark.badges||[], family:selectedPark.family||"", officialUrl:selectedPark.officialUrl||"", lat:selectedPark.lat??"", lng:selectedPark.lng??"" });
       setLookupQuery(selectedPark.name);
     }
     setEditCoaster(null);
@@ -2642,7 +2667,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
     e.preventDefault();
     if (!newParkForm.name.trim()) { setParkError("Name is required."); return; }
     if (!newParkForm.tag.trim())  { setParkError("Airport is required."); return; }
-    const park = { id: uid(), name: newParkForm.name.trim(), tag: newParkForm.tag.trim().toUpperCase(), region: newParkForm.region, badge: newParkForm.badge.trim(), family: newParkForm.family || undefined, coasters: [] };
+    const park = { id: uid(), name: newParkForm.name.trim(), tag: newParkForm.tag.trim().toUpperCase(), region: newParkForm.region, badges: newParkForm.badges, family: newParkForm.family || undefined, coasters: [] };
     onAddPark(park);
     setSelectedId(park.id);
     setAddingPark(false);
@@ -2656,7 +2681,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
     if (!parkDraft.tag.trim())  { setParkError("Airport is required."); return; }
     const lat = parkDraft.lat === "" ? null : Number(parkDraft.lat);
     const lng = parkDraft.lng === "" ? null : Number(parkDraft.lng);
-    onUpdatePark({ ...selectedPark, name:parkDraft.name.trim(), tag:parkDraft.tag.trim().toUpperCase(), region:parkDraft.region, badge:parkDraft.badge.trim(), family:parkDraft.family || undefined, officialUrl:parkDraft.officialUrl.trim() || null, lat: Number.isFinite(lat)?lat:null, lng: Number.isFinite(lng)?lng:null });
+    onUpdatePark({ ...selectedPark, name:parkDraft.name.trim(), tag:parkDraft.tag.trim().toUpperCase(), region:parkDraft.region, badges:parkDraft.badges, family:parkDraft.family || undefined, officialUrl:parkDraft.officialUrl.trim() || null, lat: Number.isFinite(lat)?lat:null, lng: Number.isFinite(lng)?lng:null });
     setParkError("");
   }
 
@@ -2864,7 +2889,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                   {regionSelect(newParkForm.region, e=>setNewParkForm(f=>({...f,region:e.target.value})))}
                   {familySelect(newParkForm.family, e=>setNewParkForm(f=>({...f,family:e.target.value})))}
                 </div>
-                {mInp(newParkForm.badge, e=>setNewParkForm(f=>({...f,badge:e.target.value})), "Badge (optional)")}
+                {badgeCheckboxes(newParkForm.badges, badges=>setNewParkForm(f=>({...f,badges})))}
                 {parkError && <div style={{ fontSize:T.fxs, color:"#f87171" }}>{parkError}</div>}
                 <div style={{ display:"flex", gap:8 }}>
                   <button type="submit" style={{ flex:1, background:"#2d0e0e", border:`1px solid ${T.accent}44`, color:T.accent, borderRadius:T.r3, padding:"10px 0", cursor:"pointer", fontSize:T.fbase, fontWeight:T.wBold, fontFamily:"inherit" }}>Create Park</button>
@@ -2917,7 +2942,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                 {regionSelect(parkDraft.region, e=>setParkDraft(d=>({...d,region:e.target.value})))}
                 {familySelect(parkDraft.family, e=>setParkDraft(d=>({...d,family:e.target.value})))}
               </div>
-              <div style={{ marginBottom:10 }}>{mInp(parkDraft.badge, e=>setParkDraft(d=>({...d,badge:e.target.value})), "Badge (optional)")}</div>
+              <div style={{ marginBottom:10 }}>{badgeCheckboxes(parkDraft.badges, badges=>setParkDraft(d=>({...d,badges})))}</div>
               <div style={{ marginBottom:12 }}>{mInp(parkDraft.officialUrl, e=>setParkDraft(d=>({...d,officialUrl:e.target.value})), "Official height-chart URL (optional)")}</div>
               {parkError && <div style={{ fontSize:T.fxs, color:"#f87171", marginBottom:8 }}>{parkError}</div>}
               <div style={{ display:"flex", gap:8 }}>
@@ -3008,8 +3033,8 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                 </label>
               </div>
               <label style={{ display:"flex", flexDirection:"column", gap:3 }}>
-                <span style={fieldLabelCss}>Badge (optional)</span>
-                {inp(newParkForm.badge, e=>setNewParkForm(f=>({...f,badge:e.target.value})), "e.g. 🏠 Home Park")}
+                <span style={fieldLabelCss}>Badges</span>
+                {badgeCheckboxes(newParkForm.badges, badges=>setNewParkForm(f=>({...f,badges})))}
               </label>
               {parkError && <div style={{ fontSize:11, color:"#f87171" }}>{parkError}</div>}
               <div style={{ display:"flex", gap:8 }}>
@@ -3046,8 +3071,8 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                 </label>
               </div>
               <label style={{ display:"flex", flexDirection:"column", gap:3, marginBottom:12 }}>
-                <span style={fieldLabelCss}>Badge (optional)</span>
-                {inp(parkDraft.badge, e=>setParkDraft(d=>({...d,badge:e.target.value})), "e.g. 🏠 Home Park", {width:"100%"})}
+                <span style={fieldLabelCss}>Badges</span>
+                {badgeCheckboxes(parkDraft.badges, badges=>setParkDraft(d=>({...d,badges})))}
               </label>
 
               {/* Official height-chart URL (Six Flags / Cedar Fair). Authoritative source for filling heights by hand. */}
@@ -3569,7 +3594,7 @@ function PlanMode({ parks, riders, parkEditProps }) {
     e.preventDefault();
     if (!addForm.name.trim()) { setAddError("Name is required."); return; }
     if (!addForm.tag.trim())  { setAddError("Airport code is required."); return; }
-    const park = { id: uid(), name: addForm.name.trim(), tag: addForm.tag.trim().toUpperCase(), region: addForm.region, badge: "", family: addForm.family || undefined, coasters: [] };
+    const park = { id: uid(), name: addForm.name.trim(), tag: addForm.tag.trim().toUpperCase(), region: addForm.region, badges: [], family: addForm.family || undefined, coasters: [] };
     parkEditProps.onAddPark(park);
     setSelectedId(park.id);
     setEditing(true);
