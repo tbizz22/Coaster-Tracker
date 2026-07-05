@@ -697,7 +697,7 @@ app.post("/api/fill-speeds", async (req, res) => {
   for (const park of parks)
     park.coasters.forEach((c, ci) => {
       if (c.defunct) return;
-      const needsStats  = fillStats  && (c.speedMph == null || c.heightFt == null || c.yearOpened == null || !c.manufacturer);
+      const needsStats  = fillStats  && (c.speedMph == null || c.heightFt == null || c.yearOpened == null || !c.manufacturer || !c.model);
       const needsImages = fillImages && !c.imageUrl;
       if (needsStats || needsImages) {
         missing.push({ parkId: park.id, parkName: park.name, coasterIdx: ci, name: c.name, rcdbUrl: c.rcdbUrl ?? null, needsStats, needsImages });
