@@ -141,11 +141,12 @@ let HOUSEHOLD_ID = null;
 export function setHouseholdId(id) { HOUSEHOLD_ID = id; }
 
 async function loadHouseholdData() {
-  const [{ data: regionRows }, { data: riderRows }, { data: parkRows }, { data: coasterRows }] = await Promise.all([
+  const [{ data: regionRows }, { data: riderRows }, { data: parkRows }, { data: coasterRows }, { data: customMfrRows }] = await Promise.all([
     supabase.from("regions").select("code,name,sort").eq("household_id", HOUSEHOLD_ID).order("sort"),
     supabase.from("riders").select("*").eq("household_id", HOUSEHOLD_ID).order("sort"),
     supabase.from("parks").select("*").eq("household_id", HOUSEHOLD_ID).order("sort"),
     supabase.from("coasters").select("*, parks!inner(household_id)").eq("parks.household_id", HOUSEHOLD_ID).order("sort"),
+    supabase.from("custom_manufacturers").select("name,sort").eq("household_id", HOUSEHOLD_ID).order("sort"),
   ]);
 
   const regions = Object.fromEntries((regionRows ?? []).map(r => [r.code, r.name]));
@@ -178,7 +179,16 @@ async function loadHouseholdData() {
     return [r.id, new Set(keys)];
   }));
 
-  return { regions, riders, parks, ridden: Object.fromEntries(creditEntries) };
+  const customManufacturers = (customMfrRows ?? []).map(r => r.name);
+
+  return { regions, riders, parks, ridden: Object.fromEntries(creditEntries), customManufacturers };
+}
+
+async function saveCustomManufacturers(names) {
+  await supabase.from("custom_manufacturers").delete().eq("household_id", HOUSEHOLD_ID);
+  if (names.length) {
+    await supabase.from("custom_manufacturers").insert(names.map((name, i) => ({ household_id: HOUSEHOLD_ID, name, sort: i })));
+  }
 }
 
 async function saveRiders(riders) {
@@ -291,6 +301,14 @@ const MANUFACTURER_OPTIONS = [
   "Reverchon", "Pinfari", "Mondial", "Larson International", "Setpoint",
 ];
 const MFR_DATALIST_ID = "mfr-options";
+// Per-household additions on top of the built-in MANUFACTURER_OPTIONS (see
+// `custom_manufacturers` table + Settings ▸ Manufacturers) — small/regional
+// builders not worth shipping to every user. Module-level + reassigned on
+// load, mirroring the existing REGIONS pattern: components read it fresh at
+// render time, and a re-render is triggered by the paired React state
+// (customManufacturers in App) changing, not by this array itself.
+let CUSTOM_MANUFACTURERS = [];
+function allManufacturerOptions() { return [...MANUFACTURER_OPTIONS, ...CUSTOM_MANUFACTURERS]; }
 function splitManufacturerModel(typeStr) {
   const s = String(typeStr || "").trim();
   if (!s) return { manufacturer: "", model: "" };
@@ -863,7 +881,7 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState(() => modalDraftFrom(coaster));
   const [err, setErr]         = useState("");
-  const [mfrOther, setMfrOther] = useState(() => !!coaster.manufacturer && !MANUFACTURER_OPTIONS.includes(coaster.manufacturer));
+  const [mfrOther, setMfrOther] = useState(() => !!coaster.manufacturer && !allManufacturerOptions().includes(coaster.manufacturer));
   const [imgSearching, setImgSearching] = useState(false);
   const [imgSearchMsg, setImgSearchMsg] = useState("");
   const panelRef = useRef(null);
@@ -891,7 +909,7 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
   // Re-seed the draft if the underlying coaster identity changes (e.g. reopened).
   useEffect(() => {
     setDraft(modalDraftFrom(coaster)); setEditing(false); setErr("");
-    setMfrOther(!!coaster.manufacturer && !MANUFACTURER_OPTIONS.includes(coaster.manufacturer));
+    setMfrOther(!!coaster.manufacturer && !allManufacturerOptions().includes(coaster.manufacturer));
   }, [coaster.name, park.id]);
 
   // Esc closes; lock background scroll while open; focus the panel for a11y.
@@ -974,7 +992,7 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
                     }}
                     style={{ width:"100%", boxSizing:"border-box", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none" }}>
                     <option value="">—</option>
-                    {MANUFACTURER_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                    {allManufacturerOptions().map(m => <option key={m} value={m}>{m}</option>)}
                     <option value="__other__">Other…</option>
                   </select>
                 )}
@@ -2173,6 +2191,73 @@ function ManageRegions({ regions, parks, onUpdate }) {
   );
 }
 
+// Household-added entries on top of the built-in MANUFACTURER_OPTIONS list
+// used by the coaster Manufacturer dropdown/datalist (CoasterModal, Settings
+// ▸ Parks & Coasters). The built-ins aren't editable here — only additions.
+function ManageManufacturers({ customManufacturers, onUpdate }) {
+  const [newName, setNewName] = useState("");
+  const [error,   setError]   = useState("");
+
+  function add(e) {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) { setError("Manufacturer name is required."); return; }
+    if (MANUFACTURER_OPTIONS.includes(name) || customManufacturers.includes(name)) {
+      setError(`"${name}" is already in the list.`); return;
+    }
+    onUpdate([...customManufacturers, name]);
+    setNewName(""); setError("");
+  }
+
+  function remove(name) {
+    if (!window.confirm(`Remove "${name}" from the Manufacturer dropdown?`)) return;
+    onUpdate(customManufacturers.filter(n => n !== name));
+  }
+
+  const inputStyle = { background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"7px 10px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none" };
+
+  return (
+    <div style={{ flex:1, overflowY:"auto", padding:"24px 28px", maxWidth:640 }}>
+      <div style={{ fontSize:T.flg, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s1 }}>Manufacturers</div>
+      <div style={{ fontSize:T.fbase, color:T.textFaint, marginBottom:T.s7 }}>
+        Add manufacturers not already in the built-in list, so hand edits and
+        RCDB imports for less-common builders stay in the dropdown instead of
+        falling back to free text every time.
+      </div>
+
+      <div style={{ ...labelCss, color:T.textGhost, letterSpacing:"0.08em", marginBottom:T.s3 }}>Built-in ({MANUFACTURER_OPTIONS.length})</div>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:T.s2, marginBottom:T.s8 }}>
+        {MANUFACTURER_OPTIONS.map(m => (
+          <span key={m} style={{ fontSize:T.fsm, color:T.textLo, background:T.panel2, border:`1px solid ${T.border}`, borderRadius:T.pill, padding:"3px 11px" }}>{m}</span>
+        ))}
+      </div>
+
+      <div style={{ ...labelCss, color:T.textGhost, letterSpacing:"0.08em", marginBottom:T.s3 }}>Added by your household ({customManufacturers.length})</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:T.s3, marginBottom:T.s8 }}>
+        {customManufacturers.length === 0 && <div style={{ fontSize:T.fbase, color:T.textGhost, fontStyle:"italic" }}>None yet — add one below.</div>}
+        {customManufacturers.map(name => (
+          <div key={name} style={{ display:"flex", alignItems:"center", gap:T.s4, background:T.panel2, border:`1px solid ${T.border}`, borderRadius:T.r4, padding:"8px 12px" }}>
+            <span style={{ flex:1, fontSize:T.fmd, color:T.ink }}>{name}</span>
+            <button onClick={() => remove(name)} style={{ background:"#1e0a0a", border:"1px solid #7f1d1d", color:"#f87171", borderRadius:T.r2, padding:"4px 10px", cursor:"pointer", fontSize:T.fsm, fontFamily:"inherit" }}>Remove</button>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r5, padding:"18px 20px" }}>
+        <div style={{ ...labelCss, fontSize:T.fbase, color:T.textLo, letterSpacing:"0.08em", marginBottom:T.s6 }}>Add Manufacturer</div>
+        <form onSubmit={add} style={{ display:"flex", gap:T.s4, alignItems:"flex-end", flexWrap:"wrap" }}>
+          <label style={{ display:"flex", flexDirection:"column", gap:T.s1, flex:1, minWidth:160 }}>
+            <span style={fieldLabelCss}>Name</span>
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Vekoma Rides Manufacturing" style={inputStyle}/>
+          </label>
+          <button type="submit" style={{ background:"#2d0e0e", border:`1px solid ${T.accent}44`, color:T.accent, borderRadius:T.r3, padding:"8px 18px", cursor:"pointer", fontSize:T.fmd, fontWeight:T.wBold, fontFamily:"inherit" }}>Add</button>
+        </form>
+        {error && <div style={{ fontSize:T.fsm, color:"#f87171", marginTop:T.s4 }}>{error}</div>}
+      </div>
+    </div>
+  );
+}
+
 function EmptyRiders() {
   return (
     <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:T.s3 }}>
@@ -2798,7 +2883,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
 
     return (
       <div style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r4, overflow:"hidden" }}>
-        <datalist id={MFR_DATALIST_ID}>{MANUFACTURER_OPTIONS.map(m => <option key={m} value={m}/>)}</datalist>
+        <datalist id={MFR_DATALIST_ID}>{allManufacturerOptions().map(m => <option key={m} value={m}/>)}</datalist>
         {/* Header */}
         <div style={{ padding:"10px 14px", background:T.panel2, borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>Coasters <span style={{ fontWeight:400, color:T.textFaint }}>({park.coasters.length})</span></div>
@@ -3358,7 +3443,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
                 </div>
               )}
 
-              <datalist id={MFR_DATALIST_ID}>{MANUFACTURER_OPTIONS.map(m => <option key={m} value={m}/>)}</datalist>
+              <datalist id={MFR_DATALIST_ID}>{allManufacturerOptions().map(m => <option key={m} value={m}/>)}</datalist>
 
               {/* Column headers */}
               <div style={{ display:"grid", gridTemplateColumns:"1.5fr 0.65fr 0.75fr 48px 48px 50px 46px 46px 28px", padding:"6px 14px", ...labelCss, color:T.textGhost, gap:6, borderBottom:`1px solid ${T.hair}` }}>
@@ -3996,6 +4081,7 @@ export default function App() {
   const [parks,  setParks]  = useState(null);
   const [ridden, setRidden] = useState(null);
   const [regions, setRegions] = useState(REGIONS); // mirrors module-level REGIONS; drives re-renders on edit
+  const [customManufacturers, setCustomManufacturers] = useState([]);
   const [ready,  setReady]  = useState(false);
   // Coaster detail modal: { parkId, coasterName }; the coaster + park are derived
   // live from `parks` so edits stay in sync. null = closed.
@@ -4020,15 +4106,23 @@ export default function App() {
   // Load everything from Supabase on mount (HOUSEHOLD_ID set by the auth gate
   // in main.jsx before App renders).
   useEffect(() => {
-    loadHouseholdData().then(({ regions, riders, parks, ridden }) => {
+    loadHouseholdData().then(({ regions, riders, parks, ridden, customManufacturers }) => {
       const parkList = parks.map(p => ({ ...p, coasters: (p.coasters || []).map(normalizeCoaster) }));
       if (Object.keys(regions).length) REGIONS = regions;
       setRegions(REGIONS);
       setRiders(riders);
       setParks(parkList);
       setRidden(ridden);
+      CUSTOM_MANUFACTURERS = customManufacturers;
+      setCustomManufacturers(customManufacturers);
       setReady(true);
     });
+  }, []);
+
+  const updateCustomManufacturers = useCallback(names => {
+    CUSTOM_MANUFACTURERS = names;
+    setCustomManufacturers(names);
+    saveCustomManufacturers(names);
   }, []);
 
   // ── ridden helpers ────────────────────────────────────────────────────────
@@ -4292,6 +4386,7 @@ export default function App() {
     { id:"parks",   label:"Parks & Coasters", desc:"Add, edit, and enrich parks and coasters"          },
     { id:"riders",  label:"Riders",           desc:"Manage riders, heights, and companion flags"       },
     { id:"regions", label:"Regions",          desc:"Rename region labels used for filtering"           },
+    { id:"manufacturers", label:"Manufacturers", desc:"Add manufacturers to the coaster dropdown"      },
     { id:"backup",  label:"Backup",           desc:"Export or import your full dataset as JSON"        },
     { id:"account", label:"Account",          desc:"View your account and sign out"                   },
   ];
@@ -4401,6 +4496,7 @@ export default function App() {
             if (tab==="parks")   return <ManageParks parks={parks} onAddPark={addPark} onUpdatePark={updatePark} onDeletePark={deletePark} onAddCoaster={addCoaster} onUpdateCoaster={updateCoaster} onDeleteCoaster={deleteCoaster} onMergeImport={mergeImportCoasters}/>;
             if (tab==="riders")  return <ManageRiders riders={riders} onAdd={addRider} onUpdate={updateRider} onDelete={deleteRider}/>;
             if (tab==="regions") return <ManageRegions regions={regions} parks={parks} onUpdate={updateRegions}/>;
+            if (tab==="manufacturers") return <ManageManufacturers customManufacturers={customManufacturers} onUpdate={updateCustomManufacturers}/>;
             if (tab==="backup")  return <ExportImport buildExport={exportDataset} onImport={importDataset} counts={`${parks.length} parks · ${riders.length} riders`}/>;
             if (tab==="account") return <AccountSettings/>;
             return null;
