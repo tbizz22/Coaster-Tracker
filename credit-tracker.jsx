@@ -1195,6 +1195,298 @@ function StatCard({ label, value, color }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// RIDER CREDITS PANEL — one rider's credits across all parks, grouped by
+// region/park in collapsible drawers. Shared by the desktop "by rider" pivot
+// in CreditTracker and the standalone mobile credits view.
+// ═══════════════════════════════════════════════════════════════════════════
+function RiderCreditsPanel({ rider, ridden, onToggle, visibleParks, allParks, onOpenCoaster, compact = false }) {
+  const sort = useCoasterSort();
+  const [riderFilter,       setRiderFilter]       = useState("");
+  const [riderStatusFilter, setRiderStatusFilter] = useState("all");
+  const [expandedParks,     setExpandedParks]     = useState(() => new Set());
+  const [riderEligibleOnly, setRiderEligibleOnly] = useState(false);
+  const [riderRiddenOnly,   setRiderRiddenOnly]   = useState(false);
+  const [confirmToggle,     setConfirmToggle]     = useState(null); // { key, name, isDone } — pending confirmation on compact views
+  const toggleParkOpen = id => setExpandedParks(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const totalsParks = allParks || visibleParks;
+  const gridCols = compact ? "2fr 1fr 56px" : "2fr 1fr 56px 56px 56px";
+  const requestToggle = (key, name, isDone) => {
+    if (!compact) { onToggle(rider.id, key); return; }
+    setConfirmToggle({ key, name, isDone });
+  };
+  if (!rider) return <EmptyRiders/>;
+  const allRidden   = totalsParks.reduce((s,p)=>s+liveCoasters(p).filter(c=>ridden[rider.id]?.has(ck(p.id,c.name))).length,0);
+  const allEligible = totalsParks.reduce((s,p)=>s+p.coasters.filter(c=>isEligible(c,rider.height)).length,0);
+  const visitedParks   = totalsParks.filter(p => liveCoasters(p).some(c => ridden[rider.id]?.has(ck(p.id,c.name))));
+  const visitedRidden   = visitedParks.reduce((s,p)=>s+liveCoasters(p).filter(c=>ridden[rider.id]?.has(ck(p.id,c.name))).length,0);
+  const visitedEligible = visitedParks.reduce((s,p)=>s+p.coasters.filter(c=>isEligible(c,rider.height)).length,0);
+  return (
+    <>
+      <div className="ct-content" style={{ flex:1, overflowY:"auto", padding:"14px 20px 24px" }}>
+        {/* Global rider strip — compact views (mobile) collapse this to name + overall fraction + a slim bar */}
+        {compact ? (
+          <div style={{ display:"flex", alignItems:"center", gap:T.s4, marginBottom:T.s5 }}>
+            <span style={{ fontSize:T.flg, fontWeight:T.wHeavy, color:rider.color, flexShrink:0 }}>{rider.name}</span>
+            <div style={{ flex:1, height:5, borderRadius:T.r2, background:T.border, overflow:"hidden" }}>
+              <div style={{ height:"100%", width:`${allEligible>0?(allRidden/allEligible)*100:0}%`, background:`linear-gradient(90deg,${rider.color},${rider.color}99)`, borderRadius:T.r2 }}/>
+            </div>
+            <span style={{ fontSize:T.fsm, color:T.textLo, flexShrink:0 }}><strong style={{color:rider.color}}>{allRidden}</strong>/{allEligible}</span>
+          </div>
+        ) : (
+        <div style={{ background:`${rider.color}0d`, border:`1px solid ${rider.color}22`, borderRadius:T.r4, padding:`${T.s4}px ${T.s6}px`, marginBottom:T.s6, display:"flex", alignItems:"center", gap:T.s6, flexWrap:"wrap" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:T.s3 }}>
+            <span style={{ fontSize:T.flg, fontWeight:T.wHeavy, color:rider.color }}>{rider.name}</span>
+            {rider.height
+              ? <span style={{ fontSize:T.fsm, fontWeight:T.wBold, color:rider.color, background:`${rider.color}1a`, border:`1px solid ${rider.color}44`, borderRadius:T.pill, padding:`2px ${T.s3}px` }}>{rider.height}" tall</span>
+              : <span style={{ fontSize:T.fsm, color:"#fb923c" }}>no height set — add in Settings ▸ Riders</span>}
+            {rider.needsCompanion && <span title="This rider needs a supervising adult to ride accompanied-only (✓*) coasters" style={{ fontSize:T.fsm, fontWeight:T.wBold, color:ACC_AMBER, background:ACC_AMBER+"1f", border:`1px solid ${ACC_AMBER}3a`, borderRadius:T.pill, padding:`2px ${T.s3}px` }}>needs an adult for ✓*</span>}
+          </div>
+          <div style={{ fontSize:T.fsm, color:T.textLo }}>
+            <strong style={{color:rider.color}}>{visitedRidden}</strong> of <strong style={{color:T.textMid}}>{visitedEligible}</strong> eligible credits at parks visited
+            <span style={{ color:T.textGhost }}> · <strong style={{color:rider.color}}>{allRidden}</strong>/<strong style={{color:T.textMid}}>{allEligible}</strong> across all {totalsParks.length} parks</span>
+            <span style={{ color:T.textGhost }}> · eligible counts <strong style={{color:rider.color}}>✓*</strong> with-adult rides</span>
+          </div>
+          <div style={{ flex:1, minWidth:120 }}>
+            <div style={{ height:5, borderRadius:T.r2, background:T.border, overflow:"hidden" }}>
+              <div style={{ height:"100%", width:`${visitedEligible>0?(visitedRidden/visitedEligible)*100:0}%`, background:`linear-gradient(90deg,${rider.color},${rider.color}99)`, borderRadius:T.r2 }}/>
+            </div>
+          </div>
+        </div>
+        )}
+
+        {/* Per-park stats + status, then filter */}
+        {(() => {
+          const q = riderFilter.trim().toLowerCase();
+          const withStats = visibleParks
+            .filter(p => p.coasters.length)
+            .map(p => {
+              const done     = liveCoasters(p).filter(c => ridden[rider.id]?.has(ck(p.id, c.name))).length;
+              const eligible = p.coasters.filter(c => isEligible(c, rider.height)).length;
+              const status   = done === 0 ? "unstarted" : (eligible > 0 && done >= eligible ? "complete" : "progress");
+              return { p, done, eligible, status };
+            });
+          const matches = withStats.filter(({ p, status }) =>
+            (!q || p.name.toLowerCase().includes(q)) &&
+            (riderStatusFilter === "all" || riderStatusFilter === status));
+          const matchIds = matches.map(m => m.p.id);
+          const allOpen  = matchIds.length > 0 && matchIds.every(id => expandedParks.has(id));
+
+          const FILTERS = [
+            { id:"all",       label:"All" },
+            { id:"progress",  label:"In progress" },
+            { id:"unstarted", label:"Unstarted" },
+            { id:"complete",  label:"Complete" },
+          ];
+
+          return (
+            <>
+              {/* Controls bar */}
+              <div style={{ position:"sticky", top:0, zIndex:2, background:T.bg, display:"flex", alignItems:"center", gap:T.s3, flexWrap:"wrap", paddingBottom:T.s4, marginBottom:T.s1 }}>
+                <input value={riderFilter} onChange={e=>setRiderFilter(e.target.value)} placeholder="Filter parks…"
+                  style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"5px 10px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", width:160 }}/>
+                <div style={{ display:"flex", gap:3, background:T.panel, borderRadius:T.r3, padding:3, border:`1px solid ${T.border}` }}>
+                  {FILTERS.map(f => (
+                    <button key={f.id} onClick={()=>setRiderStatusFilter(f.id)} style={{
+                      padding:"3px 10px", borderRadius:T.r2, border:"none", fontFamily:"inherit", fontSize:T.fsm,
+                      fontWeight: riderStatusFilter===f.id ? T.wBold : 400,
+                      background: riderStatusFilter===f.id ? T.border : "transparent",
+                      color: riderStatusFilter===f.id ? T.ink : T.textLo, cursor:"pointer",
+                    }}>{f.label}</button>
+                  ))}
+                </div>
+                {[
+                  { on:riderEligibleOnly, set:setRiderEligibleOnly, label:"Eligible only", color:rider.color },
+                  { on:riderRiddenOnly,   set:setRiderRiddenOnly,   label:"Ridden only",   color:"#4ade80" },
+                ].map(t => (
+                  <button key={t.label} onClick={()=>t.set(v=>!v)} style={{
+                    fontSize:T.fsm, padding:"4px 10px", borderRadius:T.r2, cursor:"pointer", fontFamily:"inherit",
+                    border:`1px solid ${t.on ? t.color : T.border2}`,
+                    background: t.on ? `${t.color}22` : "transparent",
+                    color: t.on ? t.color : T.textLo, fontWeight: t.on ? T.wBold : 400,
+                  }}>{t.on ? "✓ " : ""}{t.label}</button>
+                ))}
+                <button onClick={()=>setExpandedParks(allOpen ? new Set() : new Set(matchIds))}
+                  style={{ fontSize:T.fsm, padding:"4px 10px", borderRadius:T.r2, border:`1px solid ${T.border2}`, background:"transparent", color:T.textMid, cursor:"pointer", fontFamily:"inherit" }}>
+                  {allOpen ? "Collapse all" : "Expand all"}
+                </button>
+                <span style={{ fontSize:T.fxs, color:T.textFaint, marginLeft:"auto" }}>{matches.length} of {withStats.length} parks</span>
+              </div>
+
+              {matches.length === 0 && (
+                <div style={{ fontSize:T.fbase, color:T.textGhost, fontStyle:"italic", padding:"20px 0" }}>No parks match this filter.</div>
+              )}
+
+              {/* Region-grouped collapsible park drawers */}
+              {Object.entries(REGIONS).map(([rKey, rName]) => {
+                const rParks = matches.filter(({ p }) => p.region === rKey);
+                if (!rParks.length) return null;
+                return (
+                  <div key={rKey} style={{ marginBottom:T.s6 }}>
+                    <div style={{ ...labelCss, color:T.textGhost, letterSpacing:"0.08em", marginBottom:T.s3 }}>{rName}</div>
+                    {rParks.map(({ p, done, eligible, status }) => {
+                      const open = expandedParks.has(p.id);
+                      const pct  = eligible > 0 ? done/eligible : 0;
+                      const dot  = status==="complete" ? "#4ade80" : status==="progress" ? rider.color : T.textFaint;
+                      return (
+                        <div key={p.id} style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r5, overflow:"hidden", marginBottom:T.s3 }}>
+                          {/* Drawer header (toggle) */}
+                          <button onClick={()=>toggleParkOpen(p.id)} style={{
+                            display:"flex", alignItems:"center", gap:T.s4, width:"100%", padding:"9px 14px",
+                            background: open ? "#111c30" : T.panel2, border:"none", borderBottom: open ? `1px solid ${T.border}` : "none",
+                            cursor:"pointer", textAlign:"left", fontFamily:"inherit",
+                          }}>
+                            <span style={{ fontSize:T.fxs, color:T.textFaint, width:10, flexShrink:0, transition:"transform 0.12s", display:"inline-block", transform: open?"rotate(90deg)":"none" }}>▸</span>
+                            <span style={{ width:7, height:7, borderRadius:"50%", background:dot, flexShrink:0 }}/>
+                            <span style={{ fontSize:T.fbase, fontWeight:T.wHeavy, color:T.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</span>
+                            <div style={{ flex:1, minWidth:40, maxWidth:160, height:4, borderRadius:2, background:T.border, overflow:"hidden" }}>
+                              <div style={{ height:"100%", width:`${pct*100}%`, background:rider.color, borderRadius:2 }}/>
+                            </div>
+                            <span style={{ fontSize:T.fsm, color:T.textLo, flexShrink:0, marginLeft:"auto" }}>
+                              <strong style={{color: done>0?rider.color:T.textFaint}}>{done}</strong> of <strong style={{color:T.textMid}}>{eligible}</strong> eligible
+                            </span>
+                          </button>
+
+                          {/* Drawer body (active coaster list) */}
+                          {open && (() => {
+                            const rows = sort.apply(liveCoasters(p)).filter(c => {
+                              if (riderEligibleOnly && !isEligible(c, rider.height)) return false;
+                              if (riderRiddenOnly   && !ridden[rider.id]?.has(ck(p.id, c.name))) return false;
+                              return true;
+                            });
+                            const dfRaw  = defunctCoasters(p);
+                            const dfRows = riderRiddenOnly ? dfRaw.filter(c => ridden[rider.id]?.has(ck(p.id, c.name))) : dfRaw;
+                            const dfDone = dfRaw.filter(c => ridden[rider.id]?.has(ck(p.id, c.name))).length;
+                            return (
+                              <>
+                                {rows.length === 0 && (
+                                  <div style={{ fontSize:T.fsm, color:T.textGhost, fontStyle:"italic", padding:"8px 14px" }}>No coasters match the active filters.</div>
+                                )}
+                                {rows.length > 0 && (
+                                  <div style={{ display:"grid", gridTemplateColumns:gridCols, padding:"4px 14px", gap:T.s2, ...labelCss, borderBottom:`1px solid ${T.hair}` }}>
+                                    <div>Coaster</div><div>Type</div>
+                                    {!compact && <div style={{textAlign:"center"}}>Min</div>}
+                                    {!compact && <div style={{textAlign:"center"}} title="Minimum height with a supervising adult">w/ adult</div>}
+                                    <div style={{textAlign:"center"}}>Ridden</div>
+                                  </div>
+                                )}
+                                {rows.map((c, i, arr) => {
+                                  const key    = ck(p.id, c.name);
+                                  const isDone = ridden[rider.id]?.has(key);
+                                  return (
+                                    <div key={c.name} style={{ display:"grid", gridTemplateColumns:gridCols, padding:"7px 14px", borderBottom:i<arr.length-1?`1px solid ${T.hair}`:"none", background:isDone?`${rider.color}0a`:(i%2===0?"transparent":T.zebra), alignItems:"center", gap:T.s2 }}>
+                                      <div style={{ display:"flex", alignItems:"center", gap:5, minWidth:0 }}>
+                                        {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px" }}>⇄</span>}
+                                        <span onClick={()=>onOpenCoaster(p.id, c)} title="View coaster details" onMouseEnter={e=>e.currentTarget.style.textDecoration="underline"} onMouseLeave={e=>e.currentTarget.style.textDecoration="none"} style={{ fontSize:T.fbase, fontWeight: isDone?T.wBold:T.wSemi, color: isDone ? T.ink : T.textMid, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor:"pointer" }}>{c.name}</span>
+                                      </div>
+                                      <div style={{ fontSize:T.fsm, color:T.textFaint, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{coasterType(c)}</div>
+                                      {!compact && <div style={{textAlign:"center"}}><HtBadge min={c.min}/></div>}
+                                      {!compact && <div style={{textAlign:"center"}}><AccBadge value={c.minAccompanied}/></div>}
+                                      <div style={{textAlign:"center"}}>
+                                        <CreditBtn done={isDone} color={rider.color} onClick={()=>requestToggle(key, c.name, isDone)} title={`${isDone?"Unmark":"Mark"} ${c.name} as ridden`}/>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+
+                                {/* Defunct sub-table — historical credits, outside the headline count */}
+                                {dfRows.length > 0 && (
+                                  <div style={{ borderTop:`1px solid ${T.hair}`, background:"#05080f" }}>
+                                    <div style={{ ...labelCss, display:"flex", alignItems:"center", gap:T.s2, padding:"6px 14px", letterSpacing:"0.08em" }}>
+                                      Defunct · historical
+                                      {dfDone > 0 && <span style={{ color:T.textLo, fontWeight:400, textTransform:"none", letterSpacing:0 }}>+{dfDone} ridden</span>}
+                                    </div>
+                                    {dfRows.map((c, i, arr) => {
+                                      const key    = ck(p.id, c.name);
+                                      const isDone = ridden[rider.id]?.has(key);
+                                      return (
+                                        <div key={c.name} style={{ display:"grid", gridTemplateColumns:gridCols, padding:"6px 14px", borderTop:"1px solid #0a0f1a", background:isDone?"#0a1410":"transparent", alignItems:"center", gap:T.s2, opacity:0.8 }}>
+                                          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                                            <span style={{ fontSize:T.fbase, fontWeight: isDone?T.wBold:T.wMed, color:T.textLo }}>{c.name}</span>
+                                          </div>
+                                          <div style={{ fontSize:T.fsm, color:T.textGhost }}>{coasterType(c)}</div>
+                                          {!compact && <div style={{textAlign:"center"}}><HtBadge min={c.min}/></div>}
+                                          {!compact && <div style={{textAlign:"center"}}><AccBadge value={c.minAccompanied}/></div>}
+                                          <div style={{textAlign:"center"}}>
+                                            <CreditBtn done={isDone} color={T.textLo} onClick={()=>requestToggle(key, c.name, isDone)} title={`${isDone?"Unmark":"Mark"} ${c.name} (defunct) as ridden`}/>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </>
+          );
+        })()}
+      </div>
+
+      {/* Confirm-before-toggle popup — compact (mobile) views only, to guard
+          against fat-finger taps on the small credit buttons. */}
+      {confirmToggle && (
+        <div onMouseDown={e => { if (e.target === e.currentTarget) setConfirmToggle(null); }}
+          style={{ position:"fixed", inset:0, zIndex:60, background:"rgba(2,6,15,0.66)", display:"flex", alignItems:"center", justifyContent:"center", padding:T.s5 }}>
+          <div role="dialog" aria-modal="true" style={{ width:"100%", maxWidth:340, background:T.panel, border:`1px solid ${T.border2}`, borderRadius:T.r5, padding:T.s6, boxShadow:"0 24px 60px rgba(0,0,0,0.5)" }}>
+            <div style={{ fontSize:T.fbase, color:T.ink, marginBottom:T.s5 }}>
+              {confirmToggle.isDone ? "Unmark" : "Mark"} <strong>{confirmToggle.name}</strong> as ridden for <strong style={{color:rider.color}}>{rider.name}</strong>?
+            </div>
+            <div style={{ display:"flex", gap:T.s3, justifyContent:"flex-end" }}>
+              <button onClick={()=>setConfirmToggle(null)} style={{ padding:"7px 14px", borderRadius:T.r2, border:`1px solid ${T.border2}`, background:"transparent", color:T.textLo, cursor:"pointer", fontFamily:"inherit", fontSize:T.fsm }}>Cancel</button>
+              <button onClick={()=>{ onToggle(rider.id, confirmToggle.key); setConfirmToggle(null); }} style={{ padding:"7px 14px", borderRadius:T.r2, border:"none", background:rider.color, color:"#0b0f1a", fontWeight:T.wBold, cursor:"pointer", fontFamily:"inherit", fontSize:T.fsm }}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+  </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MOBILE RIDER CREDITS — phone-sized standalone credits view. Skips the
+// desktop park/rider pivot + fixed sidenav entirely: a horizontal rider
+// switcher strip up top and RiderCreditsPanel below. This is what the top-bar
+// rider name/pill deep-links into on mobile (see jumpToRiderCredits in App).
+// ═══════════════════════════════════════════════════════════════════════════
+function MobileRiderCredits({ riders, ridden, onToggle, visibleParks, allParks, onOpenCoaster, jump }) {
+  const [riderId, setRiderId] = useState(jump?.riderId || riders[0]?.id || null);
+
+  useEffect(() => {
+    if (jump?.riderId) setRiderId(jump.riderId);
+  }, [jump]);
+  useEffect(() => {
+    if (!riders.find(r => r.id === riderId) && riders[0]) setRiderId(riders[0].id);
+  }, [riders]);
+
+  const rider = riders.find(r => r.id === riderId) || riders[0];
+
+  return (
+    <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
+      <div style={{ display:"flex", gap:T.s2, padding:"10px 14px", overflowX:"auto", borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
+        {riders.map(r => (
+          <button key={r.id} onClick={() => setRiderId(r.id)} style={{
+            display:"inline-flex", alignItems:"center", gap:T.s2, flexShrink:0,
+            background: r.id===rider?.id ? `${r.color}22` : "transparent",
+            border: r.id===rider?.id ? `1px solid ${r.color}66` : `1px solid ${T.border2}`,
+            borderRadius:T.pill, padding:"5px 12px", fontSize:T.fsm, fontWeight:T.wBold,
+            color: r.id===rider?.id ? r.color : T.textLo, cursor:"pointer", fontFamily:"inherit",
+          }}>
+            <ColorDot color={r.color} size={7}/>{r.name}
+          </button>
+        ))}
+      </div>
+      <RiderCreditsPanel rider={rider} ridden={ridden} onToggle={onToggle} visibleParks={visibleParks} allParks={allParks} onOpenCoaster={onOpenCoaster} compact/>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // CREDIT TRACKER — all riders in one table, select-all per rider
 // ═══════════════════════════════════════════════════════════════════════════
 function CreditTracker({ riders, ridden, onToggle, onSelectAll, onClearAll, visibleParks, allParks, onOpenCoaster, jump }) {
@@ -1210,14 +1502,6 @@ function CreditTracker({ riders, ridden, onToggle, onSelectAll, onClearAll, visi
     if (jump.pivot) setPivot(jump.pivot);
     if (jump.riderId) setRiderId(jump.riderId);
   }, [jump]);
-
-  // By-rider view: filter + collapsible park drawers
-  const [riderFilter,       setRiderFilter]       = useState("");
-  const [riderStatusFilter, setRiderStatusFilter] = useState("all");   // all | progress | unstarted | complete
-  const [expandedParks,     setExpandedParks]     = useState(() => new Set()); // park ids expanded (default: all collapsed)
-  const [riderEligibleOnly, setRiderEligibleOnly] = useState(false); // show only coasters the rider can ride
-  const [riderRiddenOnly,   setRiderRiddenOnly]   = useState(false); // show only coasters already ridden
-  const toggleParkOpen = id => setExpandedParks(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   useEffect(() => {
     if (!visibleParks.find(p => p.id === dashPark)) setDashPark(visibleParks[0]?.id || "");
@@ -1449,218 +1733,14 @@ function CreditTracker({ riders, ridden, onToggle, onSelectAll, onClearAll, visi
     </div>
   );
 
-  // ── Right: one rider across ALL parks (clickable, grouped by region/park) ─
-  const riderBody = !rider ? <EmptyRiders/> : (() => {
-    const allRidden   = totalsParks.reduce((s,p)=>s+liveCoasters(p).filter(c=>ridden[rider.id]?.has(ck(p.id,c.name))).length,0);
-    const allEligible = totalsParks.reduce((s,p)=>s+p.coasters.filter(c=>isEligible(c,rider.height)).length,0);
-    const visitedParks   = totalsParks.filter(p => liveCoasters(p).some(c => ridden[rider.id]?.has(ck(p.id,c.name))));
-    const visitedRidden   = visitedParks.reduce((s,p)=>s+liveCoasters(p).filter(c=>ridden[rider.id]?.has(ck(p.id,c.name))).length,0);
-    const visitedEligible = visitedParks.reduce((s,p)=>s+p.coasters.filter(c=>isEligible(c,rider.height)).length,0);
-    return (
-      <div className="ct-content" style={{ flex:1, overflowY:"auto", padding:"14px 20px 24px" }}>
-        {/* Global rider strip */}
-        <div style={{ background:`${rider.color}0d`, border:`1px solid ${rider.color}22`, borderRadius:T.r4, padding:`${T.s4}px ${T.s6}px`, marginBottom:T.s6, display:"flex", alignItems:"center", gap:T.s6, flexWrap:"wrap" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:T.s3 }}>
-            <span style={{ fontSize:T.flg, fontWeight:T.wHeavy, color:rider.color }}>{rider.name}</span>
-            {rider.height
-              ? <span style={{ fontSize:T.fsm, fontWeight:T.wBold, color:rider.color, background:`${rider.color}1a`, border:`1px solid ${rider.color}44`, borderRadius:T.pill, padding:`2px ${T.s3}px` }}>{rider.height}" tall</span>
-              : <span style={{ fontSize:T.fsm, color:"#fb923c" }}>no height set — add in Settings ▸ Riders</span>}
-            {rider.needsCompanion && <span title="This rider needs a supervising adult to ride accompanied-only (✓*) coasters" style={{ fontSize:T.fsm, fontWeight:T.wBold, color:ACC_AMBER, background:ACC_AMBER+"1f", border:`1px solid ${ACC_AMBER}3a`, borderRadius:T.pill, padding:`2px ${T.s3}px` }}>needs an adult for ✓*</span>}
-          </div>
-          <div style={{ fontSize:T.fsm, color:T.textLo }}>
-            <strong style={{color:rider.color}}>{visitedRidden}</strong> of <strong style={{color:T.textMid}}>{visitedEligible}</strong> eligible credits at parks visited
-            <span style={{ color:T.textGhost }}> · <strong style={{color:rider.color}}>{allRidden}</strong>/<strong style={{color:T.textMid}}>{allEligible}</strong> across all {totalsParks.length} parks</span>
-            <span style={{ color:T.textGhost }}> · eligible counts <strong style={{color:rider.color}}>✓*</strong> with-adult rides</span>
-          </div>
-          <div style={{ flex:1, minWidth:120 }}>
-            <div style={{ height:5, borderRadius:T.r2, background:T.border, overflow:"hidden" }}>
-              <div style={{ height:"100%", width:`${visitedEligible>0?(visitedRidden/visitedEligible)*100:0}%`, background:`linear-gradient(90deg,${rider.color},${rider.color}99)`, borderRadius:T.r2 }}/>
-            </div>
-          </div>
-        </div>
-
-        {/* Per-park stats + status, then filter */}
-        {(() => {
-          const q = riderFilter.trim().toLowerCase();
-          const withStats = visibleParks
-            .filter(p => p.coasters.length)
-            .map(p => {
-              const done     = liveCoasters(p).filter(c => ridden[rider.id]?.has(ck(p.id, c.name))).length;
-              const eligible = p.coasters.filter(c => isEligible(c, rider.height)).length;
-              const status   = done === 0 ? "unstarted" : (eligible > 0 && done >= eligible ? "complete" : "progress");
-              return { p, done, eligible, status };
-            });
-          const matches = withStats.filter(({ p, status }) =>
-            (!q || p.name.toLowerCase().includes(q)) &&
-            (riderStatusFilter === "all" || riderStatusFilter === status));
-          const matchIds = matches.map(m => m.p.id);
-          const allOpen  = matchIds.length > 0 && matchIds.every(id => expandedParks.has(id));
-
-          const FILTERS = [
-            { id:"all",       label:"All" },
-            { id:"progress",  label:"In progress" },
-            { id:"unstarted", label:"Unstarted" },
-            { id:"complete",  label:"Complete" },
-          ];
-
-          return (
-            <>
-              {/* Controls bar */}
-              <div style={{ position:"sticky", top:0, zIndex:2, background:T.bg, display:"flex", alignItems:"center", gap:T.s3, flexWrap:"wrap", paddingBottom:T.s4, marginBottom:T.s1 }}>
-                <input value={riderFilter} onChange={e=>setRiderFilter(e.target.value)} placeholder="Filter parks…"
-                  style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"5px 10px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", width:160 }}/>
-                <div style={{ display:"flex", gap:3, background:T.panel, borderRadius:T.r3, padding:3, border:`1px solid ${T.border}` }}>
-                  {FILTERS.map(f => (
-                    <button key={f.id} onClick={()=>setRiderStatusFilter(f.id)} style={{
-                      padding:"3px 10px", borderRadius:T.r2, border:"none", fontFamily:"inherit", fontSize:T.fsm,
-                      fontWeight: riderStatusFilter===f.id ? T.wBold : 400,
-                      background: riderStatusFilter===f.id ? T.border : "transparent",
-                      color: riderStatusFilter===f.id ? T.ink : T.textLo, cursor:"pointer",
-                    }}>{f.label}</button>
-                  ))}
-                </div>
-                {[
-                  { on:riderEligibleOnly, set:setRiderEligibleOnly, label:"Eligible only", color:rider.color },
-                  { on:riderRiddenOnly,   set:setRiderRiddenOnly,   label:"Ridden only",   color:"#4ade80" },
-                ].map(t => (
-                  <button key={t.label} onClick={()=>t.set(v=>!v)} style={{
-                    fontSize:T.fsm, padding:"4px 10px", borderRadius:T.r2, cursor:"pointer", fontFamily:"inherit",
-                    border:`1px solid ${t.on ? t.color : T.border2}`,
-                    background: t.on ? `${t.color}22` : "transparent",
-                    color: t.on ? t.color : T.textLo, fontWeight: t.on ? T.wBold : 400,
-                  }}>{t.on ? "✓ " : ""}{t.label}</button>
-                ))}
-                <button onClick={()=>setExpandedParks(allOpen ? new Set() : new Set(matchIds))}
-                  style={{ fontSize:T.fsm, padding:"4px 10px", borderRadius:T.r2, border:`1px solid ${T.border2}`, background:"transparent", color:T.textMid, cursor:"pointer", fontFamily:"inherit" }}>
-                  {allOpen ? "Collapse all" : "Expand all"}
-                </button>
-                <span style={{ fontSize:T.fxs, color:T.textFaint, marginLeft:"auto" }}>{matches.length} of {withStats.length} parks</span>
-              </div>
-
-              {matches.length === 0 && (
-                <div style={{ fontSize:T.fbase, color:T.textGhost, fontStyle:"italic", padding:"20px 0" }}>No parks match this filter.</div>
-              )}
-
-              {/* Region-grouped collapsible park drawers */}
-              {Object.entries(REGIONS).map(([rKey, rName]) => {
-                const rParks = matches.filter(({ p }) => p.region === rKey);
-                if (!rParks.length) return null;
-                return (
-                  <div key={rKey} style={{ marginBottom:T.s6 }}>
-                    <div style={{ ...labelCss, color:T.textGhost, letterSpacing:"0.08em", marginBottom:T.s3 }}>{rName}</div>
-                    {rParks.map(({ p, done, eligible, status }) => {
-                      const open = expandedParks.has(p.id);
-                      const pct  = eligible > 0 ? done/eligible : 0;
-                      const dot  = status==="complete" ? "#4ade80" : status==="progress" ? rider.color : T.textFaint;
-                      return (
-                        <div key={p.id} style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r5, overflow:"hidden", marginBottom:T.s3 }}>
-                          {/* Drawer header (toggle) */}
-                          <button onClick={()=>toggleParkOpen(p.id)} style={{
-                            display:"flex", alignItems:"center", gap:T.s4, width:"100%", padding:"9px 14px",
-                            background: open ? "#111c30" : T.panel2, border:"none", borderBottom: open ? `1px solid ${T.border}` : "none",
-                            cursor:"pointer", textAlign:"left", fontFamily:"inherit",
-                          }}>
-                            <span style={{ fontSize:T.fxs, color:T.textFaint, width:10, flexShrink:0, transition:"transform 0.12s", display:"inline-block", transform: open?"rotate(90deg)":"none" }}>▸</span>
-                            <span style={{ width:7, height:7, borderRadius:"50%", background:dot, flexShrink:0 }}/>
-                            <span style={{ fontSize:T.fbase, fontWeight:T.wHeavy, color:T.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</span>
-                            <div style={{ flex:1, minWidth:40, maxWidth:160, height:4, borderRadius:2, background:T.border, overflow:"hidden" }}>
-                              <div style={{ height:"100%", width:`${pct*100}%`, background:rider.color, borderRadius:2 }}/>
-                            </div>
-                            <span style={{ fontSize:T.fsm, color:T.textLo, flexShrink:0, marginLeft:"auto" }}>
-                              <strong style={{color: done>0?rider.color:T.textFaint}}>{done}</strong> of <strong style={{color:T.textMid}}>{eligible}</strong> eligible
-                            </span>
-                          </button>
-
-                          {/* Drawer body (active coaster list) */}
-                          {open && (() => {
-                            const rows = sort.apply(liveCoasters(p)).filter(c => {
-                              if (riderEligibleOnly && !isEligible(c, rider.height)) return false;
-                              if (riderRiddenOnly   && !ridden[rider.id]?.has(ck(p.id, c.name))) return false;
-                              return true;
-                            });
-                            const dfRaw  = defunctCoasters(p);
-                            const dfRows = riderRiddenOnly ? dfRaw.filter(c => ridden[rider.id]?.has(ck(p.id, c.name))) : dfRaw;
-                            const dfDone = dfRaw.filter(c => ridden[rider.id]?.has(ck(p.id, c.name))).length;
-                            return (
-                              <>
-                                {rows.length === 0 && (
-                                  <div style={{ fontSize:T.fsm, color:T.textGhost, fontStyle:"italic", padding:"8px 14px" }}>No coasters match the active filters.</div>
-                                )}
-                                {rows.length > 0 && (
-                                  <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 56px 56px 56px", padding:"4px 14px", gap:T.s2, ...labelCss, borderBottom:`1px solid ${T.hair}` }}>
-                                    <div>Coaster</div><div>Type</div>
-                                    <div style={{textAlign:"center"}}>Min</div>
-                                    <div style={{textAlign:"center"}} title="Minimum height with a supervising adult">w/ adult</div>
-                                    <div style={{textAlign:"center"}}>Ridden</div>
-                                  </div>
-                                )}
-                                {rows.map((c, i, arr) => {
-                                  const key    = ck(p.id, c.name);
-                                  const isDone = ridden[rider.id]?.has(key);
-                                  return (
-                                    <div key={c.name} style={{ display:"grid", gridTemplateColumns:"2fr 1fr 56px 56px 56px", padding:"7px 14px", borderBottom:i<arr.length-1?`1px solid ${T.hair}`:"none", background:isDone?`${rider.color}0a`:(i%2===0?"transparent":T.zebra), alignItems:"center", gap:T.s2 }}>
-                                      <div style={{ display:"flex", alignItems:"center", gap:5, minWidth:0 }}>
-                                        {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px" }}>⇄</span>}
-                                        <span onClick={()=>onOpenCoaster(p.id, c)} title="View coaster details" onMouseEnter={e=>e.currentTarget.style.textDecoration="underline"} onMouseLeave={e=>e.currentTarget.style.textDecoration="none"} style={{ fontSize:T.fbase, fontWeight: isDone?T.wBold:T.wSemi, color: isDone ? T.ink : T.textMid, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor:"pointer" }}>{c.name}</span>
-                                      </div>
-                                      <div style={{ fontSize:T.fsm, color:T.textFaint, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{coasterType(c)}</div>
-                                      <div style={{textAlign:"center"}}><HtBadge min={c.min}/></div>
-                                      <div style={{textAlign:"center"}}><AccBadge value={c.minAccompanied}/></div>
-                                      <div style={{textAlign:"center"}}>
-                                        <CreditBtn done={isDone} color={rider.color} onClick={()=>onToggle(rider.id,key)} title={`${isDone?"Unmark":"Mark"} ${c.name} as ridden`}/>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-
-                                {/* Defunct sub-table — historical credits, outside the headline count */}
-                                {dfRows.length > 0 && (
-                                  <div style={{ borderTop:`1px solid ${T.hair}`, background:"#05080f" }}>
-                                    <div style={{ ...labelCss, display:"flex", alignItems:"center", gap:T.s2, padding:"6px 14px", letterSpacing:"0.08em" }}>
-                                      Defunct · historical
-                                      {dfDone > 0 && <span style={{ color:T.textLo, fontWeight:400, textTransform:"none", letterSpacing:0 }}>+{dfDone} ridden</span>}
-                                    </div>
-                                    {dfRows.map((c, i, arr) => {
-                                      const key    = ck(p.id, c.name);
-                                      const isDone = ridden[rider.id]?.has(key);
-                                      return (
-                                        <div key={c.name} style={{ display:"grid", gridTemplateColumns:"2fr 1fr 56px 56px 56px", padding:"6px 14px", borderTop:"1px solid #0a0f1a", background:isDone?"#0a1410":"transparent", alignItems:"center", gap:T.s2, opacity:0.8 }}>
-                                          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                                            <span style={{ fontSize:T.fbase, fontWeight: isDone?T.wBold:T.wMed, color:T.textLo }}>{c.name}</span>
-                                          </div>
-                                          <div style={{ fontSize:T.fsm, color:T.textGhost }}>{coasterType(c)}</div>
-                                          <div style={{textAlign:"center"}}><HtBadge min={c.min}/></div>
-                                          <div style={{textAlign:"center"}}><AccBadge value={c.minAccompanied}/></div>
-                                          <div style={{textAlign:"center"}}>
-                                            <CreditBtn done={isDone} color={T.textLo} onClick={()=>onToggle(rider.id,key)} title={`${isDone?"Unmark":"Mark"} ${c.name} (defunct) as ridden`}/>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </>
-                            );
-                          })()}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </>
-          );
-        })()}
-      </div>
-    );
-  })();
-
   return (
     <div className="ct-split">
       {pivot === "rider" ? riderNav : parkNav}
       <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
         {pivotBar}
-        {pivot === "rider" ? riderBody : allRidersBody}
+        {pivot === "rider"
+          ? <RiderCreditsPanel rider={rider} ridden={ridden} onToggle={onToggle} visibleParks={visibleParks} allParks={allParks} onOpenCoaster={onOpenCoaster}/>
+          : allRidersBody}
       </div>
     </div>
   );
@@ -2174,11 +2254,11 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
                       return (
                         <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"3px 0", borderBottom:`1px solid ${T.hair}`, fontSize:T.fxs }}>
                           <span style={{ color:T.text, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                            {r.coasterName}{r.fuzzy && <span title={`Approx. match to "${r.scrapedName}"`} style={{ color:ACC_AMBER, marginLeft:4 }}>≈</span>}
+                            {r.coasterName}{r.fuzzy && <span title="Approx. name match on the official page" style={{ color:ACC_AMBER, marginLeft:4 }}>≈</span>}
                           </span>
                           <span style={{ flexShrink:0, marginLeft:T.s2 }}>
                             <span style={{ color:T.textFaint, marginRight:6 }}>{r.source === "Official" ? "🏛" : "📖"}</span>
-                            {fmt(r.min)}{r.minAccompanied!=null?` (acc ${fmt(r.minAccompanied)})`:""} → <span style={{color:"#4ade80", fontWeight:T.wBold}}>{fmt(r.height)}{r.minAccompanied!=null?` (acc ${fmt(r.minAccompanied)})`:""}</span>
+                            {fmt(r.currentMin)} → <span style={{color:"#4ade80", fontWeight:T.wBold}}>{fmt(r.height)}{r.minAccompanied!=null?` (acc ${fmt(r.minAccompanied)})`:""}</span>
                           </span>
                         </div>
                       );
@@ -3585,8 +3665,12 @@ export default function App() {
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
+  // 'credits' is intentionally excluded here: it's not in the mobile bottom
+  // nav, but it's still a valid deep-link target on mobile via the rider
+  // pills (see jumpToRiderCredits) — bouncing it back to 'plan' would break
+  // that flow. Only 'parks' has no mobile entry point at all.
   useEffect(() => {
-    if (isMobile && (view === 'parks' || view === 'credits')) setView('plan');
+    if (isMobile && view === 'parks') setView('plan');
     if (!isMobile && (view === 'plan' || view === 'log')) setView('parks');
   }, [isMobile, view]);
 
@@ -3826,7 +3910,7 @@ export default function App() {
         if (!parkUpdates.length) return park;
         const coasters = park.coasters.map((c, i) => {
           const u = parkUpdates.find(u => u.coasterIdx === i);
-          return u ? { ...c, min: u.height, heightSource: u.source } : c;
+          return u ? { ...c, min: u.height, minAccompanied: u.minAccompanied ?? c.minAccompanied, heightSource: u.source } : c;
         });
         return { ...park, coasters };
       });
@@ -3893,7 +3977,9 @@ export default function App() {
   // On desktop, treat null settingsTab as "general" so the content area is never blank.
   const effectiveTab = (!isMobile && !settingsTab) ? "general" : settingsTab;
 
-  const showRegion = !!NAV.find(n => n.id === view)?.region;
+  // Credits view has its own per-park region grouping on mobile (MobileRiderCredits),
+  // so the global region filter bar would be redundant chrome there.
+  const showRegion = !!NAV.find(n => n.id === view)?.region && !(isMobile && view === "credits");
 
   return (
     <div style={{ minHeight:"100vh", background:T.bg, color:T.text, fontFamily:"'DM Sans','Segoe UI',sans-serif", display:"flex", flexDirection:"column" }}>
@@ -3983,7 +4069,9 @@ export default function App() {
         {view==="parks" && <ParksTab visibleParks={visibleParks} allParks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden} onSelectAll={selectAll} onClearAll={clearAll} onOpenCoaster={openCoaster}/>}
 
         {/* Credits tab */}
-        {view==="credits" && <CreditTracker riders={riders} ridden={ridden} onToggle={toggleRidden} onSelectAll={selectAll} onClearAll={clearAll} visibleParks={visibleParks} allParks={parks} onOpenCoaster={openCoaster} jump={creditsJump}/>}
+        {view==="credits" && (isMobile
+          ? <MobileRiderCredits riders={riders} ridden={ridden} onToggle={toggleRidden} visibleParks={visibleParks} allParks={parks} onOpenCoaster={openCoaster} jump={creditsJump}/>
+          : <CreditTracker riders={riders} ridden={ridden} onToggle={toggleRidden} onSelectAll={selectAll} onClearAll={clearAll} visibleParks={visibleParks} allParks={parks} onOpenCoaster={openCoaster} jump={creditsJump}/>)}
 
         {/* Settings — desktop: sidebar + content; mobile: menu list → section */}
         {view==="settings" && (() => {
