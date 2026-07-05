@@ -778,6 +778,31 @@ app.post("/api/fill-speeds", async (req, res) => {
   }
 });
 
+// ── One-off image lookup for a single coaster (CoasterModal "Find image" button) ──
+// Same source order as fill-speeds' image pass (Wikimedia Commons, then RCDB's own
+// photo mirrored to Supabase Storage) but for exactly one coaster, on demand — no
+// job lock, no SSE, just a plain request/response.
+app.post("/api/find-image", async (req, res) => {
+  const { name, parkName, rcdbUrl } = req.body || {};
+  if (!name || !parkName) return res.status(400).json({ error: "name and parkName are required." });
+  try {
+    let rcdbId = null, rcdbHtml = null;
+    try {
+      const r = await lookupStatsFromRcdb(name, parkName, rcdbUrl ?? null);
+      rcdbId = r?.rcdbId ?? null;
+      rcdbHtml = r?._html ?? null;
+    } catch (e) {
+      console.log(`[find-image] rcdb lookup error for "${name}": ${e.message}`);
+    }
+    const result = await lookupImage(name, parkName, rcdbId, rcdbHtml);
+    if (!result) return res.json({ found: false });
+    res.json({ found: true, ...result });
+  } catch (err) {
+    console.log(`[find-image] Error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Scrape authoritative heights from a park's official attractions page ──────
 // Returns proposed updates (matched to existing coasters by name) without writing;
 // the client reviews and applies them. One park per call (a browser launch is heavy).

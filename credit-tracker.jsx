@@ -864,7 +864,29 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
   const [draft, setDraft]     = useState(() => modalDraftFrom(coaster));
   const [err, setErr]         = useState("");
   const [mfrOther, setMfrOther] = useState(() => !!coaster.manufacturer && !MANUFACTURER_OPTIONS.includes(coaster.manufacturer));
+  const [imgSearching, setImgSearching] = useState(false);
+  const [imgSearchMsg, setImgSearchMsg] = useState("");
   const panelRef = useRef(null);
+
+  async function handleFindImage() {
+    setImgSearching(true);
+    setImgSearchMsg("");
+    try {
+      const resp = await fetchWithColdStartRetry(API_BASE + "/api/find-image", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: coaster.name, parkName: park.name, rcdbUrl: coaster.rcdbUrl ?? null }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) { setImgSearchMsg(data.error || "Search failed."); return; }
+      if (!data.found) { setImgSearchMsg("No image found."); return; }
+      st("imageUrl", data.imageUrl);
+      setImgSearchMsg(`Found via ${data.imageSource === "rcdb-mirror" ? "RCDB" : "Wikimedia"}.`);
+    } catch (e) {
+      setImgSearchMsg(`Could not reach the scraper: ${e.message}`);
+    } finally {
+      setImgSearching(false);
+    }
+  }
 
   // Re-seed the draft if the underlying coaster identity changes (e.g. reopened).
   useEffect(() => {
@@ -990,8 +1012,15 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
               </label>
             </div>
             <Field label="Image URL">
-              <input value={draft.imageUrl} onChange={e=>st("imageUrl", e.target.value)} placeholder="https://upload.wikimedia.org/…"
-                style={{ width:"100%", boxSizing:"border-box", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none" }}/>
+              <div style={{ display:"flex", gap:T.s2 }}>
+                <input value={draft.imageUrl} onChange={e=>st("imageUrl", e.target.value)} placeholder="https://upload.wikimedia.org/…"
+                  style={{ flex:1, minWidth:0, boxSizing:"border-box", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none" }}/>
+                <button type="button" onClick={handleFindImage} disabled={imgSearching} title="Search Wikimedia/RCDB for a photo" style={{
+                  background:"transparent", border:`1px solid ${T.border2}`, color: imgSearching ? T.textFaint : T.accent,
+                  borderRadius:T.r2, padding:"0 12px", cursor: imgSearching ? "default" : "pointer", fontSize:T.fmd, fontFamily:"inherit", whiteSpace:"nowrap", flexShrink:0,
+                }}>{imgSearching ? "Searching…" : "🔍 Find"}</button>
+              </div>
+              {imgSearchMsg && <div style={{ fontSize:T.fxs, color: imgSearchMsg==="No image found."||imgSearchMsg.startsWith("Could not")||imgSearchMsg.startsWith("Search failed") ? "#f87171" : "#4ade80", marginTop:T.s1 }}>{imgSearchMsg}</div>}
               {draft.imageUrl && <img src={draft.imageUrl} alt="preview" style={{ marginTop:T.s2, width:"100%", maxHeight:120, objectFit:"cover", borderRadius:T.r2, border:`1px solid ${T.border}` }} onError={e=>e.currentTarget.style.display="none"}/>}
             </Field>
             {err && <div style={{ fontSize:T.fsm, color:"#f87171" }}>{err}</div>}
