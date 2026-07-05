@@ -2303,6 +2303,14 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
   const [scrapeLoading, setScrapeLoading] = useState(false);
   const [scrapeResult,  setScrapeResult]  = useState(null);   // {matched,unmatched...} or {error}
 
+  // Mobile layout detection (independent of App's isMobile — ManageParks is also rendered inside PlanMode)
+  const [mpMobile, setMpMobile] = useState(() => window.innerWidth < 640);
+  useEffect(() => {
+    const h = () => setMpMobile(window.innerWidth < 640);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+
   // Import delta preview (computed by mergeCoasters before applying)
   const [importPreview, setImportPreview] = useState(null);   // { added, updated, unchanged, coasters, parkName }
 
@@ -2491,6 +2499,238 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
       {Object.entries(REGIONS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
     </select>
   );
+
+  // ── Shared input style for mobile forms ──
+  const mInp = (val, onChange, placeholder, extra={}) => (
+    <input value={val} onChange={onChange} placeholder={placeholder}
+      style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"10px 12px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", width:"100%", ...extra }}/>
+  );
+
+  // ── Mobile coaster list (cards + expand-to-edit) ──
+  const mobileCoasterList = (park) => {
+    const openEdit = (c, i) => setEditCoaster({ idx:i, draft:{ id:c.id, name:c.name, typeText:coasterType(c), min:c.min==null?"":String(c.min), minAccompanied:c.minAccompanied==null?"":String(c.minAccompanied), speed:c.speedMph==null?"":String(c.speedMph), racing:!!c.racing, defunct:!!c.defunct } });
+    const numInput = (val, onChange, placeholder, extra={}) => (
+      <input type="number" value={val} onChange={onChange} placeholder={placeholder}
+        style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"10px 0", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%", ...extra }}/>
+    );
+    const fieldLabel = (text) => <div style={{ fontSize:T.fxs, color:T.textFaint, marginBottom:3, textTransform:"uppercase", letterSpacing:"0.06em" }}>{text}</div>;
+
+    return (
+      <div style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r4, overflow:"hidden" }}>
+        {/* Header */}
+        <div style={{ padding:"10px 14px", background:T.panel2, borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink }}>Coasters <span style={{ fontWeight:400, color:T.textFaint }}>({park.coasters.length})</span></div>
+          {park.officialUrl && (
+            <button onClick={handleScrapeHeights} disabled={scrapeLoading}
+              style={{ fontSize:T.fxs, fontWeight:T.wBold, padding:"5px 10px", borderRadius:T.r2, background:scrapeLoading?"transparent":"#2d0e0e", border:`1px solid ${scrapeLoading?T.border2:T.accent+"44"}`, color:scrapeLoading?T.textFaint:T.accent, cursor:scrapeLoading?"default":"pointer", fontFamily:"inherit" }}>
+              {scrapeLoading ? "Scraping…" : "📏 Scrape"}
+            </button>
+          )}
+        </div>
+
+        {/* Scrape review panel */}
+        {scrapeResult && (
+          <div style={{ padding:"12px 14px", borderBottom:`1px solid ${T.border}`, background:T.zebra }}>
+            {scrapeResult.error ? <div style={{ fontSize:T.fsm, color:"#f87171" }}>⚠ {scrapeResult.error}</div>
+            : scrapeResult.status ? <div style={{ fontSize:T.fsm, color:T.textLo }}>⏳ {scrapeResult.status}</div>
+            : (() => {
+              const changed = (scrapeResult.matched||[]).filter(m => m.changed);
+              const fmt = v => v==null?"—":`${v}"`;
+              return <>
+                <div style={{ fontSize:T.fxs, color:T.textLo, marginBottom:T.s2 }}>
+                  Scraped <strong style={{color:T.accent}}>{scrapeResult.scrapedCount}</strong> · <strong style={{color:"#facc15"}}>{changed.length}</strong> changed
+                </div>
+                {changed.length > 0 ? <>
+                  <div style={{ maxHeight:140, overflowY:"auto", marginBottom:T.s3 }}>
+                    {changed.map((m,i) => (
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:T.s3, padding:"3px 0", borderBottom:`1px solid ${T.hair}`, fontSize:T.fxs }}>
+                        <span style={{ color:T.text, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.name}{m.fuzzy && <span style={{ color:ACC_AMBER, marginLeft:4 }}>≈</span>}</span>
+                        <span style={{ flexShrink:0, color:T.textFaint }}>{fmt(m.current.min)} → <span style={{color:"#4ade80", fontWeight:T.wBold}}>{fmt(m.scraped.min)}</span></span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display:"flex", gap:T.s2 }}>
+                    <button onClick={handleApplyScrape} style={{ flex:1, background:"#1e3a1e", border:"1px solid #4ade8044", color:"#4ade80", borderRadius:T.r2, padding:"7px 0", cursor:"pointer", fontSize:T.fsm, fontWeight:T.wBold, fontFamily:"inherit" }}>Apply {changed.length}</button>
+                    <button onClick={()=>setScrapeResult(null)} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textLo, borderRadius:T.r2, padding:"7px 12px", cursor:"pointer", fontSize:T.fsm, fontFamily:"inherit" }}>Dismiss</button>
+                  </div>
+                </> : <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <span style={{ fontSize:T.fxs, color:"#4ade80" }}>✓ Heights already match.</span>
+                  <button onClick={()=>setScrapeResult(null)} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textLo, borderRadius:T.r2, padding:"4px 10px", cursor:"pointer", fontSize:T.fsm, fontFamily:"inherit" }}>OK</button>
+                </div>}
+              </>;
+            })()}
+          </div>
+        )}
+
+        {/* Coaster rows */}
+        {park.coasters.length === 0 && <div style={{ padding:"16px 14px", fontSize:T.fbase, color:T.textGhost, fontStyle:"italic" }}>No coasters yet — add one below.</div>}
+        {park.coasters.map((c, i) => (
+          editCoaster?.idx === i ? (
+            <form key={`e${i}`} onSubmit={handleSaveCoaster} style={{ padding:"14px", borderBottom:`1px solid ${T.hair}`, background:"#1e293b22" }}>
+              <div style={{ marginBottom:10 }}>
+                {fieldLabel("Name")}
+                {mInp(editCoaster.draft.name, e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,name:e.target.value}})), "Name")}
+              </div>
+              <div style={{ marginBottom:10 }}>
+                {fieldLabel("Type")}
+                {mInp(editCoaster.draft.typeText, e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,typeText:e.target.value}})), "e.g. B&M Steel Sit Down")}
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:10 }}>
+                <div>{fieldLabel("Min ht\"")}  {numInput(editCoaster.draft.min,           e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,min:e.target.value}})),           "—")}</div>
+                <div>{fieldLabel("Acc ht\"")}  {numInput(editCoaster.draft.minAccompanied, e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,minAccompanied:e.target.value}})), "—", {color:"#fbbf24"})}</div>
+                <div>{fieldLabel("Speed mph")}{numInput(editCoaster.draft.speed,           e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,speed:e.target.value}})),           "—")}</div>
+              </div>
+              <div style={{ display:"flex", gap:T.s6, marginBottom:12 }}>
+                <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:T.fsm, color:T.textLo, cursor:"pointer", userSelect:"none" }}>
+                  <input type="checkbox" checked={!!editCoaster.draft.racing} onChange={e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,racing:e.target.checked}}))} style={{ accentColor:"#818cf8", width:16, height:16 }}/> Racing
+                </label>
+                <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:T.fsm, color:T.textLo, cursor:"pointer", userSelect:"none" }}>
+                  <input type="checkbox" checked={!!editCoaster.draft.defunct} onChange={e=>setEditCoaster(ec=>({...ec,draft:{...ec.draft,defunct:e.target.checked}}))} style={{ accentColor:"#f87171", width:16, height:16 }}/> Defunct
+                </label>
+              </div>
+              {editCoaster.err && <div style={{ fontSize:T.fxs, color:"#f87171", marginBottom:8 }}>{editCoaster.err}</div>}
+              <div style={{ display:"flex", gap:8 }}>
+                <button type="submit" style={{ flex:1, background:"#1e3a1e", border:"1px solid #4ade8044", color:"#4ade80", borderRadius:T.r3, padding:"10px 0", cursor:"pointer", fontSize:T.fbase, fontWeight:T.wBold, fontFamily:"inherit" }}>Save</button>
+                <button type="button" onClick={()=>setEditCoaster(null)} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textLo, borderRadius:T.r3, padding:"10px 14px", cursor:"pointer", fontSize:T.fbase, fontFamily:"inherit" }}>Cancel</button>
+                <button type="button" onClick={()=>{ if(window.confirm(`Remove "${c.name}"?`)) { onDeleteCoaster(park.id, i); setEditCoaster(null); }}} style={{ background:"#1e0a0a", border:"1px solid #7f1d1d", color:"#f87171", borderRadius:T.r3, padding:"10px 14px", cursor:"pointer", fontSize:T.fbase, fontFamily:"inherit" }}>Delete</button>
+              </div>
+            </form>
+          ) : (
+            <button key={`r${i}`} onClick={() => openEdit(c, i)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", background:"none", border:"none", borderBottom:`1px solid ${T.hair}`, padding:"12px 14px", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
+              <div style={{ flex:1, minWidth:0, paddingRight:8 }}>
+                <div style={{ fontSize:T.fbase, fontWeight:T.wSemi, color:c.defunct?T.textMid:T.text, textDecoration:c.defunct?"line-through":"none", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                  {c.name}{c.racing&&<span style={{ marginLeft:5, fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px" }}>⇄</span>}
+                  {c.defunct&&<DefunctBadge/>}
+                </div>
+                {coasterType(c) && <div style={{ fontSize:T.fxs, color:T.textFaint, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{coasterType(c)}</div>}
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:5, flexShrink:0 }}>
+                <HtBadge min={c.min}/>
+                {c.minAccompanied!=null && <span style={{ fontSize:T.fxs, fontWeight:T.wBold, color:"#fbbf24", background:"#78350f22", border:"1px solid #78350f55", borderRadius:T.r1, padding:"2px 5px" }}>{c.minAccompanied}"</span>}
+                <span style={{ color:T.textGhost, fontSize:T.fmd, marginLeft:2 }}>›</span>
+              </div>
+            </button>
+          )
+        ))}
+
+        {/* Mobile add coaster form */}
+        <form onSubmit={handleAddCoaster} style={{ padding:"14px", borderTop:`1px solid ${T.border}`, background:T.panel2 }}>
+          <div style={{ fontSize:T.fxs, fontWeight:T.wBold, color:T.textFaint, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:10 }}>Add Coaster</div>
+          <div style={{ marginBottom:8 }}>{mInp(coasterForm.name, e=>setCoasterForm(f=>({...f,name:e.target.value})), "Coaster name")}</div>
+          <div style={{ marginBottom:8 }}>{mInp(coasterForm.typeText, e=>setCoasterForm(f=>({...f,typeText:e.target.value})), "Type (optional)")}</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:10 }}>
+            <input type="number" min={20} max={96}  value={coasterForm.min}           onChange={e=>setCoasterForm(f=>({...f,min:e.target.value}))}           placeholder="Min ht" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"10px 0", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%" }}/>
+            <input type="number" min={0}  max={96}  value={coasterForm.minAccompanied} onChange={e=>setCoasterForm(f=>({...f,minAccompanied:e.target.value}))} placeholder="Acc ht" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"10px 0", color:"#fbbf24", fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%" }}/>
+            <input type="number" min={0}  max={150} value={coasterForm.speed}          onChange={e=>setCoasterForm(f=>({...f,speed:e.target.value}))}          placeholder="Speed"  style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:"10px 0", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", textAlign:"center", width:"100%" }}/>
+          </div>
+          {coasterError && <div style={{ fontSize:T.fxs, color:"#f87171", marginBottom:8 }}>{coasterError}</div>}
+          <button type="submit" style={{ width:"100%", background:"#2d0e0e", border:`1px solid ${T.accent}44`, color:T.accent, borderRadius:T.r3, padding:"11px 0", cursor:"pointer", fontSize:T.fbase, fontWeight:T.wBold, fontFamily:"inherit" }}>+ Add Coaster</button>
+        </form>
+      </div>
+    );
+  };
+
+  // ── Mobile: park picker (step 1 — no park selected) ──
+  if (mpMobile && !lockToParkId && !selectedId) {
+    return (
+      <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 16px", borderBottom:`1px solid ${T.border}`, background:T.panel, flexShrink:0 }}>
+          <div style={{ fontSize:T.fmd, fontWeight:T.wHeavy, color:T.ink }}>Parks</div>
+          <button onClick={() => { setAddingPark(true); setParkError(""); }}
+            style={{ fontSize:T.fsm, background:"#2d0e0e", border:`1px solid ${T.accent}44`, color:T.accent, borderRadius:T.r3, padding:"6px 14px", cursor:"pointer", fontFamily:"inherit", fontWeight:T.wBold }}>+ Add</button>
+        </div>
+        <div style={{ flex:1, overflowY:"auto" }}>
+          {addingPark && (
+            <div style={{ padding:16, borderBottom:`1px solid ${T.border}` }}>
+              <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink, marginBottom:12 }}>New Park</div>
+              <form onSubmit={handleAddPark} style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                <div style={{ display:"flex", gap:8 }}>
+                  {mInp(newParkForm.name, e=>setNewParkForm(f=>({...f,name:e.target.value})), "Park name", {flex:1})}
+                  {mInp(newParkForm.tag, e=>setNewParkForm(f=>({...f,tag:e.target.value})), "Tag", {width:66, flex:"none"})}
+                </div>
+                <div style={{ display:"flex", gap:8 }}>
+                  {regionSelect(newParkForm.region, e=>setNewParkForm(f=>({...f,region:e.target.value})))}
+                  {familySelect(newParkForm.family, e=>setNewParkForm(f=>({...f,family:e.target.value})))}
+                </div>
+                {mInp(newParkForm.badge, e=>setNewParkForm(f=>({...f,badge:e.target.value})), "Badge (optional)")}
+                {parkError && <div style={{ fontSize:T.fxs, color:"#f87171" }}>{parkError}</div>}
+                <div style={{ display:"flex", gap:8 }}>
+                  <button type="submit" style={{ flex:1, background:"#2d0e0e", border:`1px solid ${T.accent}44`, color:T.accent, borderRadius:T.r3, padding:"10px 0", cursor:"pointer", fontSize:T.fbase, fontWeight:T.wBold, fontFamily:"inherit" }}>Create Park</button>
+                  <button type="button" onClick={()=>{setAddingPark(false);setParkError("");}} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textLo, borderRadius:T.r3, padding:"10px 14px", cursor:"pointer", fontSize:T.fbase, fontFamily:"inherit" }}>Cancel</button>
+                </div>
+              </form>
+            </div>
+          )}
+          {Object.entries(REGIONS).map(([rKey, rName]) => {
+            const rParks = parks.filter(p => p.region === rKey);
+            if (!rParks.length) return null;
+            return (
+              <div key={rKey}>
+                <div style={{ padding:"10px 16px 5px", fontSize:T.fxs, fontWeight:T.wBold, color:T.textFaint, textTransform:"uppercase", letterSpacing:"0.08em" }}>{rName}</div>
+                {rParks.map(p => (
+                  <button key={p.id} onClick={() => selectPark(p.id)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", background:"none", border:"none", borderBottom:`1px solid ${T.border}`, padding:"13px 16px", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
+                    <div>
+                      <div style={{ fontSize:T.fbase, fontWeight:T.wSemi, color:T.ink }}>{p.name}</div>
+                      <div style={{ fontSize:T.fxs, color:T.textFaint, marginTop:2 }}>{p.tag} · {p.coasters.length} coasters</div>
+                    </div>
+                    <span style={{ color:T.textGhost, fontSize:T.fmd }}>›</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Mobile: park detail (step 2 — park selected) ──
+  if (mpMobile && !lockToParkId && selectedId) {
+    return (
+      <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:T.s3, padding:"10px 16px", background:T.panel, borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
+          <button onClick={() => { setSelectedId(null); setScrapeResult(null); setEditCoaster(null); }} style={{ background:"none", border:"none", color:T.accent, cursor:"pointer", fontSize:T.fbase, fontFamily:"inherit", padding:`${T.s1}px ${T.s2}px`, marginLeft:-T.s2 }}>← Parks</button>
+          <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>{selectedPark?.name}</div>
+        </div>
+        <div style={{ flex:1, overflowY:"auto", padding:"14px 14px 80px" }}>
+          {selectedPark && parkDraft && <>
+            {/* Park edit form */}
+            <form onSubmit={handleSavePark} style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r4, padding:"14px", marginBottom:16 }}>
+              <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink, marginBottom:12 }}>Park Details</div>
+              <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                {mInp(parkDraft.name, e=>setParkDraft(d=>({...d,name:e.target.value})), "Park name", {flex:1})}
+                {mInp(parkDraft.tag, e=>setParkDraft(d=>({...d,tag:e.target.value})), "Tag", {width:66, flex:"none"})}
+              </div>
+              <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                {regionSelect(parkDraft.region, e=>setParkDraft(d=>({...d,region:e.target.value})))}
+                {familySelect(parkDraft.family, e=>setParkDraft(d=>({...d,family:e.target.value})))}
+              </div>
+              <div style={{ marginBottom:10 }}>{mInp(parkDraft.badge, e=>setParkDraft(d=>({...d,badge:e.target.value})), "Badge (optional)")}</div>
+              <div style={{ marginBottom:12 }}>{mInp(parkDraft.officialUrl, e=>setParkDraft(d=>({...d,officialUrl:e.target.value})), "Official height-chart URL (optional)")}</div>
+              {parkError && <div style={{ fontSize:T.fxs, color:"#f87171", marginBottom:8 }}>{parkError}</div>}
+              <div style={{ display:"flex", gap:8 }}>
+                <button type="submit" style={{ flex:1, background:"#1e3a1e", border:"1px solid #4ade8044", color:"#4ade80", borderRadius:T.r3, padding:"10px 0", cursor:"pointer", fontSize:T.fbase, fontWeight:T.wBold, fontFamily:"inherit" }}>Save</button>
+                <button type="button" onClick={()=>{ if(window.confirm(`Delete ${selectedPark.name}? This cannot be undone.`)) { onDeletePark(selectedPark.id); setSelectedId(null); }}}
+                  style={{ background:"#1e0a0a", border:"1px solid #7f1d1d", color:"#f87171", borderRadius:T.r3, padding:"10px 14px", cursor:"pointer", fontSize:T.fbase, fontFamily:"inherit" }}>Delete</button>
+              </div>
+            </form>
+
+            {/* Coaster list */}
+            {mobileCoasterList(selectedPark)}
+          </>}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Mobile + lockToParkId (PlanMode inline edit): no park picker, just coaster list ──
+  if (mpMobile && lockToParkId && selectedPark && parkDraft) {
+    return (
+      <div style={{ flex:1, overflowY:"auto", padding:"14px 14px 80px" }}>
+        {mobileCoasterList(selectedPark)}
+      </div>
+    );
+  }
 
   return (
     <div className="ct-split">
