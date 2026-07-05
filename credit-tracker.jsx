@@ -2015,9 +2015,7 @@ function LookupList({ coasters, parkUrl, lookupSel, setLookupSel, lookupMin, set
   );
 }
 
-function GeneralSettings({ parks, onApplyHeights, onApplyScrapedAll, onApplySpeeds }) {
-  const [scrapeAllRunning, setScrapeAllRunning] = useState(false);
-  const [scrapeAll,        setScrapeAll]        = useState(null);
+function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
   const [enrichRunning,    setEnrichRunning]    = useState(false);
   // enrichResults: { speeds, heights, finished }
   // speeds: { results, found, notFound, total, error }
@@ -2026,14 +2024,13 @@ function GeneralSettings({ parks, onApplyHeights, onApplyScrapedAll, onApplySpee
   const [enrichFields,     setEnrichFields]     = useState({ stats: true, images: false, heights: true });
 
   const nullCount       = parks.reduce((s, p) => s + p.coasters.filter(c => c.min == null).length, 0);
-  const scrapeTargets   = parks.filter(p => p.officialUrl).length;
   const incompleteStats = parks.reduce((s, p) => s + p.coasters.filter(c => !c.defunct && (c.speedMph == null || c.heightFt == null || c.yearOpened == null || !c.manufacturer)).length, 0);
   const incompleteImgs  = parks.reduce((s, p) => s + p.coasters.filter(c => !c.defunct && !c.imageUrl).length, 0);
 
   // Run whichever enrichment endpoints are selected, track both done before finishing.
   function handleEnrich() {
     const wantSpeeds  = enrichFields.stats || enrichFields.images;
-    const wantHeights = enrichFields.heights && nullCount > 0;
+    const wantHeights = enrichFields.heights;
     if (!wantSpeeds && !wantHeights) return;
 
     setEnrichRunning(true);
@@ -2065,30 +2062,10 @@ function GeneralSettings({ parks, onApplyHeights, onApplyScrapedAll, onApplySpee
     const speedsUpdates = (enrichResults?.speeds?.results||[]).filter(r =>
       r.speedMph != null || r.heightFt != null || r.yearOpened != null || r.manufacturer || r.model || r.material || r.style || r.imageUrl
     );
-    const heightsUpdates = (enrichResults?.heights?.results||[]).filter(r => r.height != null);
+    const heightsUpdates = (enrichResults?.heights?.results||[]).filter(r => r.changed);
     if (speedsUpdates.length)  onApplySpeeds(speedsUpdates);
     if (heightsUpdates.length) onApplyHeights(heightsUpdates);
     setEnrichResults(null);
-  }
-
-  function handleScrapeAll() {
-    setScrapeAllRunning(true);
-    setScrapeAll({ parks: [], done: 0, totalParks: 0, finished: false, totalChanged: 0 });
-    postSSE("/api/scrape-all-heights", { parks }, msg => {
-      if (msg.type === "start")        setScrapeAll(prev => ({ ...prev, totalParks: msg.totalParks }));
-      else if (msg.type === "park")    setScrapeAll(prev => ({ ...prev, done: msg.done, totalParks: msg.totalParks, parks: [...prev.parks, { parkId: msg.parkId, parkName: msg.parkName, changed: msg.changed||[], unmatchedExisting: msg.unmatchedExisting||[], error: msg.error||null }] }));
-      else if (msg.type === "done")    { setScrapeAll(prev => ({ ...prev, finished: true, totalChanged: msg.totalChanged, parksScraped: msg.parksScraped, parksFailed: msg.parksFailed })); setScrapeAllRunning(false); }
-      else if (msg.type === "error")   { setScrapeAll(prev => ({ ...(prev||{}), error: msg.message, finished: true })); setScrapeAllRunning(false); }
-    });
-  }
-
-  function handleApplyScrapeAll() {
-    const updates = [];
-    for (const p of (scrapeAll?.parks||[])) {
-      for (const m of (p.changed||[])) updates.push({ parkId: p.parkId, coasterName: m.name, min: m.scraped.min, minAccompanied: m.scraped.minAccompanied });
-    }
-    if (updates.length) onApplyScrapedAll(updates);
-    setScrapeAll(null);
   }
 
   const actionBtn = (onClick, disabled, label) => (
@@ -2129,12 +2106,12 @@ function GeneralSettings({ parks, onApplyHeights, onApplyScrapedAll, onApplySpee
       <div style={{ fontSize:T.flg, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s1 }}>Data Operations</div>
       <div style={{ fontSize:T.fbase, color:T.textFaint, marginBottom:T.s7 }}>Bulk enrichment and scraping across all parks and coasters.</div>
 
-      {/* ── Enrich card: RCDB stats/images + Wikipedia heights ── */}
+      {/* ── Enrich card: RCDB stats/images + best-available heights ── */}
       {card(<>
         <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>
           <div style={{ flex:1, minWidth:200 }}>
             <div style={{ fontSize:T.fmd, fontWeight:T.wBold, color:T.ink }}>Enrich Coaster Data</div>
-            <div style={{ fontSize:T.fsm, color:T.textLo, marginTop:2 }}>Fill missing data for all operating coasters. Stats and images from RCDB & Wikimedia; heights from Wikipedia.</div>
+            <div style={{ fontSize:T.fsm, color:T.textLo, marginTop:2 }}>Fill missing data for all operating coasters. Stats and images from RCDB & Wikimedia. Heights check every available source automatically — a park's own official height chart first (also catching stale values there), Wikipedia as a fallback for anything left.</div>
             <div style={{ display:"flex", gap:T.s5, marginTop:T.s3, flexWrap:"wrap" }}>
               <label style={{ display:"flex", alignItems:"center", gap:6, cursor: enrichRunning ? "default" : "pointer", fontSize:T.fsm, color: enrichRunning ? T.textFaint : T.textLo, userSelect:"none" }}>
                 <input type="checkbox" checked={enrichFields.stats} disabled={enrichRunning} onChange={e => setEnrichFields(f => ({ ...f, stats: e.target.checked }))} style={{ accentColor:T.accent }}/>
@@ -2155,7 +2132,7 @@ function GeneralSettings({ parks, onApplyHeights, onApplyScrapedAll, onApplySpee
 
         {enrichResults && (() => {
           const speedsFound   = (enrichResults.speeds?.results||[]).filter(r => r.speedMph!=null||r.heightFt!=null||r.yearOpened!=null||r.manufacturer||r.model||r.material||r.style||r.imageUrl);
-          const heightsFound  = (enrichResults.heights?.results||[]).filter(r => r.height != null);
+          const heightsFound  = (enrichResults.heights?.results||[]).filter(r => r.changed);
           const totalApply    = speedsFound.length + heightsFound.length;
           return (
             <div style={resultsDivider}>
@@ -2186,18 +2163,26 @@ function GeneralSettings({ parks, onApplyHeights, onApplyScrapedAll, onApplySpee
                 {enrichResults.heights.error && <div style={{ fontSize:T.fsm, color:"#f87171", marginBottom:T.s2 }}>⚠ Heights: {enrichResults.heights.error}</div>}
                 {enrichResults.heights.total > 0 && (
                   <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s2 }}>
-                    Heights — found <strong style={{color:"#4ade80"}}>{enrichResults.heights.found}</strong> of {enrichResults.heights.total} via Wikipedia
+                    Heights — <strong style={{color:"#4ade80"}}>{enrichResults.heights.found}</strong> update{enrichResults.heights.found!==1?"s":""} found of {enrichResults.heights.total} checked
                     {enrichResults.heights.notFound > 0 && <span style={{color:"#f87171"}}> · {enrichResults.heights.notFound} not found</span>}
                   </div>
                 )}
                 {heightsFound.length > 0 && (
-                  <div style={{ maxHeight:160, overflowY:"auto", marginBottom:T.s2 }}>
-                    {heightsFound.map((r, i) => (
-                      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"3px 0", borderBottom:`1px solid ${T.hair}`, fontSize:T.fxs }}>
-                        <span style={{ color:T.text, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.coasterName}</span>
-                        <span style={{ color:"#4ade80", fontWeight:T.wBold, flexShrink:0, marginLeft:T.s2 }}>{r.height}"</span>
-                      </div>
-                    ))}
+                  <div style={{ maxHeight:200, overflowY:"auto", marginBottom:T.s2 }}>
+                    {heightsFound.map((r, i) => {
+                      const fmt = v => v==null ? "—" : `${v}"`;
+                      return (
+                        <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"3px 0", borderBottom:`1px solid ${T.hair}`, fontSize:T.fxs }}>
+                          <span style={{ color:T.text, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                            {r.coasterName}{r.fuzzy && <span title={`Approx. match to "${r.scrapedName}"`} style={{ color:ACC_AMBER, marginLeft:4 }}>≈</span>}
+                          </span>
+                          <span style={{ flexShrink:0, marginLeft:T.s2 }}>
+                            <span style={{ color:T.textFaint, marginRight:6 }}>{r.source === "Official" ? "🏛" : "📖"}</span>
+                            {fmt(r.min)}{r.minAccompanied!=null?` (acc ${fmt(r.minAccompanied)})`:""} → <span style={{color:"#4ade80", fontWeight:T.wBold}}>{fmt(r.height)}{r.minAccompanied!=null?` (acc ${fmt(r.minAccompanied)})`:""}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </>}
@@ -2205,64 +2190,6 @@ function GeneralSettings({ parks, onApplyHeights, onApplyScrapedAll, onApplySpee
                 <div style={{ display:"flex", gap:T.s2, marginTop:T.s3 }}>
                   {totalApply > 0 && actionBtn(handleApplyEnrich, false, `Apply ${totalApply} update${totalApply!==1?"s":""}`)}
                   {dismissBtn(() => setEnrichResults(null))}
-                </div>
-              )}
-            </div>
-          );
-        })()}
-      </>)}
-
-      {/* ── Scrape All Official Heights ── */}
-      {card(<>
-        <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>
-          <div style={{ flex:1, minWidth:200 }}>
-            <div style={{ fontSize:T.fmd, fontWeight:T.wBold, color:T.ink }}>Scrape Official Heights</div>
-            <div style={{ fontSize:T.fsm, color:T.textLo, marginTop:2 }}>Fetch authoritative alone/accompanied heights from <strong style={{color:T.textMid}}>{scrapeTargets}</strong> park{scrapeTargets!==1?"s":""} with an official URL.</div>
-          </div>
-          {actionBtn(handleScrapeAll, scrapeAllRunning || scrapeTargets===0, scrapeAllRunning ? `Scraping ${scrapeAll?.done||0}/${scrapeAll?.totalParks||"…"}…` : "Scrape All Parks")}
-        </div>
-        {scrapeAll && (() => {
-          const withChanges = scrapeAll.parks.filter(p => (p.changed||[]).length > 0);
-          const failed = scrapeAll.parks.filter(p => p.error);
-          const totalUpdates = withChanges.reduce((s,p) => s+p.changed.length, 0);
-          return (
-            <div style={resultsDivider}>
-              {scrapeAll.error && <div style={{ fontSize:T.fsm, color:"#f87171", marginBottom:T.s2 }}>⚠ {scrapeAll.error}</div>}
-              <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s3 }}>
-                {scrapeAll.finished ? "Done" : "Scraping"} · <strong style={{color:T.textMid}}>{scrapeAll.parks.length}</strong>/{scrapeAll.totalParks} parks
-                {totalUpdates > 0 && <> · <strong style={{color:"#facc15"}}>{totalUpdates}</strong> change{totalUpdates!==1?"s":""} across {withChanges.length} park{withChanges.length!==1?"s":""}</>}
-                {failed.length > 0 && <span style={{color:"#f87171"}}> · {failed.length} failed</span>}
-              </div>
-              <div style={{ maxHeight:300, overflowY:"auto", marginBottom:T.s3 }}>
-                {withChanges.map(p => (
-                  <div key={p.parkId} style={{ marginBottom:T.s3 }}>
-                    <div style={{ fontSize:T.fsm, fontWeight:T.wBold, color:T.text, marginBottom:T.s1 }}>{p.parkName} <span style={{ color:T.textFaint, fontWeight:400 }}>· {p.changed.length}</span></div>
-                    {p.changed.map((m,i) => {
-                      const fmt = v => v==null ? "—" : `${v}"`;
-                      return (
-                        <div key={i} style={{ display:"flex", justifyContent:"space-between", gap:T.s3, padding:"2px 0 2px 12px", fontSize:T.fxs }}>
-                          <span style={{ color:T.textMid, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                            {m.name}{m.fuzzy && <span title={`Approx. match to "${m.scrapedName}"`} style={{ color:ACC_AMBER, marginLeft:4 }}>≈ {m.scrapedName}</span>}
-                          </span>
-                          <span style={{ flexShrink:0, color:T.textFaint }}>
-                            {fmt(m.current.min)}{m.current.minAccompanied!=null?` (acc ${m.current.minAccompanied}")`:""} → <span style={{color:"#4ade80", fontWeight:T.wBold}}>{fmt(m.scraped.min)}{m.scraped.minAccompanied!=null?` (acc ${m.scraped.minAccompanied}")`:""}</span>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
-                {failed.map(p => (
-                  <div key={p.parkId} style={{ fontSize:T.fxs, color:"#f8717199", padding:"2px 0" }}>{p.parkName}: {p.error}</div>
-                ))}
-                {scrapeAll.finished && totalUpdates===0 && !scrapeAll.error && (
-                  <div style={{ fontSize:T.fsm, color:"#4ade80" }}>✓ All scraped heights already match.</div>
-                )}
-              </div>
-              {scrapeAll.finished && (
-                <div style={{ display:"flex", gap:T.s2 }}>
-                  {totalUpdates > 0 && actionBtn(handleApplyScrapeAll, false, `Apply ${totalUpdates} update${totalUpdates!==1?"s":""}`)}
-                  {dismissBtn(() => setScrapeAll(null))}
                 </div>
               )}
             </div>
@@ -2290,7 +2217,7 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
   // separate Manufacturer/Model fields for anyone who wants precise control.
   const blankCoaster = { name:"", typeText:"", min:"", minAccompanied:"", speed:"", racing:false, defunct:false };
 
-  const [selectedId,   setSelectedId]   = useState(lockToParkId || parks[0]?.id || null);
+  const [selectedId,   setSelectedId]   = useState(lockToParkId || null);
   const [addingPark,   setAddingPark]   = useState(false);
   const [parkDraft,    setParkDraft]    = useState(null);
   const [newParkForm,  setNewParkForm]  = useState(blankPark);
