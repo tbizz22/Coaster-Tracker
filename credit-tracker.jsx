@@ -2126,6 +2126,7 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
       }
       setEnrichRunning(status.active);
       setHeightsActive(status.active);
+      if (!status.active) setStopping(false); // nothing left to stop once the job isn't active
       setEnrichResults(prev => ({ speeds: prev?.speeds ?? null, heights, finished: !status.active }));
     };
     (async () => {
@@ -2153,6 +2154,7 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
     if (!wantSpeeds && !wantHeights) return;
 
     setEnrichRunning(true);
+    setStopping(false);
     setEnrichResults({ speeds: null, heights: null, finished: false });
 
     let pendingOps = (wantSpeeds ? 1 : 0) + (wantHeights ? 1 : 0);

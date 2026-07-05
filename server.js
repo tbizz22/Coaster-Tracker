@@ -6,7 +6,7 @@
 import express from "express";
 import cors from "cors";
 import * as cheerio from "cheerio";
-import { scrapeParkHeights } from "./scrape-heights.js";
+import { scrapeParkHeights, ScrapeCancelledError } from "./scrape-heights.js";
 
 const app = express();
 // FRONTEND_URL = the deployed SPA's production origin (comma-separated for
@@ -369,10 +369,11 @@ app.post("/api/fill-heights", async (req, res) => {
         if (job.cancelled) break;
         const park = parks.find(p => p.id === parkId);
         try {
-          const scraped = await scrapeParkHeights(park.officialUrl);
+          const scraped = await scrapeParkHeights(park.officialUrl, { isCancelled: () => job.cancelled });
           const { matched } = matchScrapeToPark(park, scraped);
           officialByPark.set(parkId, new Map(matched.map(m => [m.coasterIdx, m])));
         } catch (err) {
+          if (err instanceof ScrapeCancelledError) break;
           console.log(`[fill-heights] Official scrape failed for ${park.name}: ${err.message}`);
           officialByPark.set(parkId, new Map());
         }
