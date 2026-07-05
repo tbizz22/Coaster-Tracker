@@ -43,7 +43,7 @@ function AuthForm() {
   return (
     <div style={wrap}>
       <div style={card}>
-        <h2 style={{ margin: "0 0 16px", fontSize: 18 }}>🎢 Coaster Tracker</h2>
+        <h2 style={{ margin: "0 0 16px", fontSize: 18 }}>🎢 Coaster Attack</h2>
         <form onSubmit={submit}>
           <input style={input} type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
           <input style={input} type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
