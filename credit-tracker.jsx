@@ -775,6 +775,21 @@ function LegendInfo({ color = T.accent, states = RIDE_STATUS_ORDER }) {
   );
 }
 
+// Small row thumbnail with a graceful fallback: a broken/hotlink-blocked
+// imageUrl still resolves to the placeholder swatch instead of leaving the
+// cell blank (a plain onError={hide} on the <img> has nothing to fall back
+// to once the element disappears).
+function RowThumb({ url, size = 28, radius, placeholder }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [url]);
+  const r = radius ?? T.r2;
+  if (url && !broken) {
+    return <img src={url} alt="" style={{ width:size, height:size, flexShrink:0, borderRadius:r, objectFit:"cover", border:`1px solid ${T.border}` }} onError={()=>setBroken(true)}/>;
+  }
+  if (placeholder) return placeholder;
+  return <div style={{ width:size, height:size, flexShrink:0, borderRadius:r, background:T.panel2, border:`1px solid ${T.hair}` }}/>;
+}
+
 function CreditBtn({ done, color, onClick, title }) {
   return (
     <button onClick={onClick} title={title} style={{
@@ -1232,7 +1247,8 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
 
       {/* Coaster table — last column adapts to the active lens */}
       <div style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r5, overflow:"hidden" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"2fr 0.6fr 0.8fr 60px 56px 64px", padding:"8px 14px", background:T.panel2, borderBottom:`1px solid ${T.border}`, ...labelCss, gap:T.s2, alignItems:"center" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"32px 2fr 0.6fr 0.8fr 60px 56px 64px", padding:"8px 14px", background:T.panel2, borderBottom:`1px solid ${T.border}`, ...labelCss, gap:T.s2, alignItems:"center" }}>
+          <div/>
           <SortTh label="Coaster" col="name" sort={sort.sort} onSort={sort.onSort}/>
           <SortTh label="Manufacturer" col="type" sort={sort.sort} onSort={sort.onSort}/>
           <div>Model</div>
@@ -1246,11 +1262,12 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
           const dim = lensRider && !eligible;
           const lowest = c.minAccompanied ?? c.min;   // lowest posted threshold, for the "need X" hint
           return (
-            <div key={c.name} style={{ display:"grid", gridTemplateColumns:"2fr 0.6fr 0.8fr 60px 56px 64px", padding:"8px 14px", borderBottom: i<arr.length-1?`1px solid ${T.hair}`:"none",
+            <div key={c.name} style={{ display:"grid", gridTemplateColumns:"32px 2fr 0.6fr 0.8fr 60px 56px 64px", padding:"8px 14px", borderBottom: i<arr.length-1?`1px solid ${T.hair}`:"none",
               background: lensRider
                 ? (eligible ? (i%2===0?"transparent":T.zebra) : (i%2===0?"#0a0510":"#070309"))
                 : (i%2===0?"transparent":T.zebra),
               alignItems:"center", gap:T.s2 }}>
+              <RowThumb url={c.imageUrl}/>
               <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                 {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px" }}>⇄</span>}
                 <span onClick={()=>onOpenCoaster(park.id, c)} title="View coaster details" onMouseEnter={e=>e.currentTarget.style.textDecoration="underline"} onMouseLeave={e=>e.currentTarget.style.textDecoration="none"} style={{ fontSize:T.fbase, fontWeight:T.wSemi, color: dim ? T.textGhost : T.text, cursor:"pointer" }}>{c.name}</span>
@@ -1480,9 +1497,7 @@ function RiderCreditsPanel({ rider, ridden, onToggle, visibleParks, allParks, on
                                   return (
                                     <div key={c.name} style={{ display:"grid", gridTemplateColumns:gridCols, padding:"7px 14px", borderBottom:i<arr.length-1?`1px solid ${T.hair}`:"none", background:isDone?`${rider.color}0a`:(i%2===0?"transparent":T.zebra), alignItems:"center", gap:T.s2 }}>
                                       <div style={{ display:"flex", alignItems:"center", gap:7, minWidth:0 }}>
-                                        {!compact && (c.imageUrl
-                                          ? <img src={c.imageUrl} alt="" style={{ width:28, height:28, flexShrink:0, borderRadius:T.r2, objectFit:"cover", border:`1px solid ${T.border}` }} onError={e=>e.currentTarget.style.display="none"}/>
-                                          : <div style={{ width:28, height:28, flexShrink:0, borderRadius:T.r2, background:T.panel2, border:`1px solid ${T.hair}` }}/>)}
+                                        {!compact && <RowThumb url={c.imageUrl}/>}
                                         {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px" }}>⇄</span>}
                                         <span onClick={()=>onOpenCoaster(p.id, c)} title="View coaster details" onMouseEnter={e=>e.currentTarget.style.textDecoration="underline"} onMouseLeave={e=>e.currentTarget.style.textDecoration="none"} style={{ fontSize:T.fbase, fontWeight: isDone?T.wBold:T.wSemi, color: isDone ? T.ink : T.textMid, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor:"pointer" }}>{c.name}</span>
                                       </div>
@@ -1796,9 +1811,7 @@ function CreditTracker({ riders, ridden, onToggle, onSelectAll, onClearAll, visi
                   onMouseLeave={e => e.currentTarget.style.background = i%2===0 ? "transparent" : T.zebra}
                 >
                   <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-                    {c.imageUrl
-                      ? <img src={c.imageUrl} alt="" style={{ width:28, height:28, flexShrink:0, borderRadius:T.r2, objectFit:"cover", border:`1px solid ${T.border}` }} onError={e=>e.currentTarget.style.display="none"}/>
-                      : <div style={{ width:28, height:28, flexShrink:0, borderRadius:T.r2, background:T.panel2, border:`1px solid ${T.hair}` }}/>}
+                    <RowThumb url={c.imageUrl}/>
                     {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px", flexShrink:0 }}>⇄</span>}
                     <span onClick={()=>onOpenCoaster(parkData.id, c)} title="View coaster details" onMouseEnter={e=>e.currentTarget.style.textDecoration="underline"} onMouseLeave={e=>e.currentTarget.style.textDecoration="none"} style={{ fontSize:T.fbase, fontWeight:T.wSemi, color: anyDone ? T.text : T.textLo, cursor:"pointer" }}>{c.name}</span>
                   </div>
@@ -3600,13 +3613,11 @@ function PlanMode({ parks, riders, parkEditProps }) {
               <div key={c.name} style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r4, overflow:"hidden" }}>
                 <div style={{ display:"flex", gap:T.s4, padding:T.s4 }}>
                   {/* Thumbnail — real image if available, styled placeholder otherwise */}
-                  {c.imageUrl ? (
-                    <img src={c.imageUrl} alt={c.name} style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, objectFit:"cover", border:`1px solid ${T.border}` }}/>
-                  ) : (
+                  <RowThumb url={c.imageUrl} size={56} radius={T.r3} placeholder={
                     <div style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, background:`linear-gradient(135deg, ${matColor}33, ${matColor}11)`, border:`1px solid ${matColor}44`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>
                       🎢
                     </div>
-                  )}
+                  }/>
                   {/* Info */}
                   <div style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column", justifyContent:"center", gap:T.s1 }}>
                     <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name}</div>
@@ -3788,13 +3799,11 @@ function LogMode({ parks, riders, ridden, onToggle, onOpenCoaster }) {
                   style={{ display:"flex", gap:T.s4, padding:T.s4, cursor: onOpenCoaster ? "pointer" : "default" }}
                 >
                   {/* Thumbnail — real image if available, styled placeholder otherwise */}
-                  {c.imageUrl ? (
-                    <img src={c.imageUrl} alt={c.name} style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, objectFit:"cover", border:`1px solid ${T.border}` }}/>
-                  ) : (
+                  <RowThumb url={c.imageUrl} size={56} radius={T.r3} placeholder={
                     <div style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, background:`linear-gradient(135deg, ${matColor}33, ${matColor}11)`, border:`1px solid ${matColor}44`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>
                       🎢
                     </div>
-                  )}
+                  }/>
                   {/* Info */}
                   <div style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column", justifyContent:"center", gap:T.s1 }}>
                     <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name}</div>
