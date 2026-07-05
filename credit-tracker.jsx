@@ -2113,13 +2113,14 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
 
   // The fill-heights job runs server-side independent of any one connection (see
   // server.js), so it survives navigating away from this tab. On mount, check
-  // whether a job is already in flight (or just finished) and resume showing its
-  // progress instead of leaving the UI looking idle while work continues.
+  // whether a job is already in flight — or finished while we were away — and
+  // resume showing its progress/results instead of leaving the UI looking like
+  // nothing ever happened.
   useEffect(() => {
     let cancelled = false, pollId;
     const hydrate = status => {
       if (cancelled || !status) return;
-      const heights = { results: [], found: 0, notFound: 0, total: status.total };
+      const heights = { results: [], found: 0, notFound: 0, total: status.total, cancelled: status.doneMessage?.cancelled };
       for (const m of status.messages || []) {
         if (m.type === "result") { heights.results.push(m); heights.found = m.found; heights.notFound = m.notFound; }
       }
@@ -2128,9 +2129,13 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
       setEnrichResults(prev => ({ speeds: prev?.speeds ?? null, heights, finished: !status.active }));
     };
     (async () => {
+      // status.total is only present once a job has actually been started —
+      // that's true whether it's still running or already finished, so this
+      // also covers a fast job that completed entirely while the tab was away.
       const status = await apiGet("/api/fill-heights/status").catch(() => null);
-      if (cancelled || !status?.active) return;
+      if (cancelled || status?.total == null) return;
       hydrate(status);
+      if (!status.active) return;
       pollId = setInterval(async () => {
         const s = await apiGet("/api/fill-heights/status").catch(() => null);
         if (cancelled || !s) return;
