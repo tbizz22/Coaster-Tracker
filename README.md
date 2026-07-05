@@ -1,4 +1,4 @@
-# 🎢 Coaster Tracker
+# 🎢 Coaster Attack
 
 A web app for tracking roller-coaster **credits** (which rider has ridden
 which coaster) across theme parks, plus per-rider **height eligibility** and a
@@ -9,9 +9,10 @@ Built for a family of riders of differing heights — including the
 "can ride only with an adult" case (e.g. a 39" rider) — so the app distinguishes
 *ride-alone* from *accompanied* height limits.
 
-**Live:** [coaster-tracker-gray.vercel.app](https://coaster-tracker-gray.vercel.app)
-(SPA on Vercel) · scraper service on Render at `coaster-tracker.onrender.com` ·
-source on GitHub at [`tbizz22/Coaster-Tracker`](https://github.com/tbizz22/Coaster-Tracker).
+**Live:** [coasterattack.com](https://coasterattack.com)
+(custom domain on the Vercel SPA deploy) · scraper service on Render at
+`coaster-tracker.onrender.com` · source on GitHub at
+[`tbizz22/Coaster-Tracker`](https://github.com/tbizz22/Coaster-Tracker).
 
 ---
 
@@ -44,13 +45,19 @@ Open http://localhost:5173, sign up (creates your household), and you're in.
 
 ## What you can do
 
-| Tab | Purpose |
-|---|---|
-| **🧭 Plan** *(mobile prototype)* | A mobile-first "where should we go" view: pick a park, see every rider's avatar on every coaster (greyed when too short, amber-badged "A" when accompanied-only), with per-rider summary cards instead of a raw table. Desktop keeps the dense Parks tab; Plan is an app-style alternative aimed at small screens. Has an inline **✎ Edit park** entry point (opens the same park/coaster editor as Settings, scoped to one park). |
-| **📝 Log** *(mobile prototype)* | The post-visit counterpart to Plan — same park/avatar view, but tapping a rider's avatar toggles that credit. Writes through the same `ridden`/`toggleRidden` persistence as the Credits tab. |
-| **🎢 Parks** | Opens on an offline **map** of the parks (region-colored markers sized by coaster count). Click a marker — or a park in the left list — to open that park's coasters. A small colored chip shows the park's **family/chain** (`SF` Six Flags, `CF` Cedar Fair-branded, `UNI` Universal, `SW` SeaWorld/United Parks, `IND` independent) next to its airport-code tag. Tables show both the ride-alone **Min** and a dedicated **w/ adult** (accompanied) height column. The detail defaults to a neutral **Overview**; pick a rider in the inline **View** control to see their height eligibility (`✓` can ride alone, `✓*` only with an adult, `✗` too short). Click any coaster **name** to open a detail modal (toggle into edit mode to update it). "← Back to map" returns to the overview. |
-| **✓ Credits** | Mark who has ridden what. **Pivot** the left nav **By park** (all-riders × coasters grid, bulk toggles) or **By rider** (one rider's credits across every park, with **Eligible only** / **Ridden only** filters and a muted "Defunct · historical" sub-table per park). Both pivots show the alone + accompanied height columns; click a coaster name for its detail modal. The top-bar rider pills are clickable — they jump straight to that rider's By-rider view — and lead with a denominator scoped to **parks the rider has actually visited** (the all-parks total is kept alongside it). |
-| **⚙ Settings** | Manage **Parks & Coasters** (+ heights, defunct flag, official-URL, RCDB import with **delta merge** (no duplicates), height auto-fill, per-park **official-height scrape**, **batch scrape all parks**, and **fill speeds/height/year/manufacturer/model/material/style from RCDB**), **Riders** (incl. a per-rider "needs an adult for ✓*" flag), **Regions**, **💾 Backup** (export/import the whole dataset as JSON), and **👤 Account** (signed-in email + sign out). |
+The app enforces a hard split between mobile and desktop layouts (below vs.
+above a ~640px viewport width): each tab below is reachable on **one** of the
+two, not both — Plan/Log are the phone-sized experience, Parks/Credits are the
+desktop-sized one. There's no toggle; resizing the window (or viewing on an
+actual phone/desktop) switches which set of tabs is active.
+
+| Tab | Where | Purpose |
+|---|---|---|
+| **🧭 Plan** | Mobile only | The mobile "where should we go" view: pick a park, see every rider's avatar on every coaster (greyed when too short, amber-badged "A" when accompanied-only), with per-rider summary cards instead of a raw table. Has an inline **✎ Edit park** entry point (opens the same park/coaster editor as Settings, scoped to one park) and a **＋ Add park** form, so mobile never has to detour through Settings to create a park. |
+| **📝 Log** | Mobile only | The post-visit counterpart to Plan — same park/avatar view, but tapping a rider's avatar toggles that credit. Writes through the same `ridden`/`toggleRidden` persistence as the Credits tab. |
+| **🎢 Parks** | Desktop only | Opens on an offline **map** of the parks (region-colored markers sized by coaster count). Click a marker — or a park in the left list (which has its own **＋ Add park** shortcut) — to open that park's coasters. A small colored chip shows the park's **family/chain** (`SF` Six Flags, `CF` Cedar Fair-branded, `UNI` Universal, `SW` SeaWorld/United Parks, `IND` independent) next to its airport-code tag. The coaster table has a ride thumbnail column, separate **Manufacturer** (abbreviated — B&M, RMC, GCI, …) and **Model** columns, the ride-alone **Min**, and a dedicated **w/ adult** (accompanied) height column. The detail defaults to a neutral **Overview**; pick a rider in the inline **View** control to see their height eligibility (`✓` can ride alone, `✓*` only with an adult, `✗` too short) — the legend for those glyphs sits behind a small "ⓘ" hover affordance rather than always on screen. Click any coaster **name** to open a detail modal (toggle into edit mode to update it). "← Back to map" returns to the overview. |
+| **✓ Credits** | Desktop only (also reachable read/toggle-only from mobile via a rider-pill deep link) | Mark who has ridden what. **Pivot** the left nav **By park** (all-riders × coasters grid, bulk toggles, with ride thumbnails) or **By rider** (one rider's credits across every park, with **Eligible only** / **Ridden only** filters, ride thumbnails, and a muted "Defunct · historical" sub-table per park). Both pivots show the alone + accompanied height columns; click a coaster name for its detail modal. The top-bar rider pills are clickable — they jump straight to that rider's By-rider view — and lead with a denominator scoped to **parks the rider has actually visited** (the all-parks total is kept alongside it). |
+| **⚙ Settings** | Both (mobile gets a stacked drill-down menu; desktop keeps a vertical sub-nav) | Manage **Parks & Coasters** (+ heights, defunct flag, official-URL, RCDB import with **delta merge** (no duplicates), height auto-fill, per-park **official-height scrape**, **batch scrape all parks**, and **fill speeds/height/year/manufacturer/model/material/style from RCDB**), **Riders** (incl. a per-rider "needs an adult for ✓*" flag, and a manufacturer dropdown with an "Other…" free-text fallback when editing a coaster), **Regions**, **💾 Backup** (export/import the whole dataset as JSON), and **👤 Account** (signed-in email + sign out). |
 
 Key concepts: **credit** = a rider has ridden a coaster (unit of progress);
 **eligible** = the rider meets the height limit (alone or accompanied) and the
