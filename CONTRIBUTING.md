@@ -47,6 +47,23 @@ Avoid testing destructive/global operations (schema migrations via the Supabase
 CLI, anything that isn't scoped to a household) against production Supabase from
 a branch — those aren't covered by the household-isolation safety net.
 
+## Changing the production domain
+
+The scraper service's CORS allowlist (`FRONTEND_URL` on Render) is a fixed list
+of origins — it does **not** automatically pick up a new custom domain added in
+Vercel. If you add/change the production domain (e.g. adding `coasterattack.com`
+as a custom domain), update `FRONTEND_URL` on Render to include the new origin
+(comma-separated, keep the old one too unless it's fully retired) or the
+scraper will silently reject every request from the new domain with a CORS
+error — while still working fine from `localhost` (the Vite dev proxy bypasses
+CORS entirely) or from `curl`, which is why this is easy to miss. Verify with:
+
+```
+curl -sI -X OPTIONS "https://<scraper-host>/api/lookup-coasters" \
+  -H "Origin: https://<new-domain>" -H "Access-Control-Request-Method: GET" \
+  | grep -i access-control-allow-origin
+```
+
 ## Summary
 
 ```
