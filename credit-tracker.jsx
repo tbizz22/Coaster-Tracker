@@ -2016,34 +2016,59 @@ function LookupList({ coasters, parkUrl, lookupSel, setLookupSel, lookupMin, set
 }
 
 function GeneralSettings({ parks, onApplyHeights, onApplyScrapedAll, onApplySpeeds }) {
-  const [fillLoading,      setFillLoading]      = useState(false);
-  const [fillResults,      setFillResults]      = useState(null);
   const [scrapeAllRunning, setScrapeAllRunning] = useState(false);
   const [scrapeAll,        setScrapeAll]        = useState(null);
   const [enrichRunning,    setEnrichRunning]    = useState(false);
+  // enrichResults: { speeds, heights, finished }
+  // speeds: { results, found, notFound, total, error }
+  // heights: { results, found, notFound, total, error }
   const [enrichResults,    setEnrichResults]    = useState(null);
-  const [enrichFields,     setEnrichFields]     = useState({ stats: true, images: false });
+  const [enrichFields,     setEnrichFields]     = useState({ stats: true, images: false, heights: true });
 
   const nullCount       = parks.reduce((s, p) => s + p.coasters.filter(c => c.min == null).length, 0);
   const scrapeTargets   = parks.filter(p => p.officialUrl).length;
   const incompleteStats = parks.reduce((s, p) => s + p.coasters.filter(c => !c.defunct && (c.speedMph == null || c.heightFt == null || c.yearOpened == null || !c.manufacturer)).length, 0);
   const incompleteImgs  = parks.reduce((s, p) => s + p.coasters.filter(c => !c.defunct && !c.imageUrl).length, 0);
 
-  function handleFillHeights() {
-    setFillLoading(true);
-    setFillResults({ results: [], found: 0, notFound: 0, total: 0 });
-    postSSE("/api/fill-heights", { parks }, msg => {
-      if (msg.type === "start")        setFillResults({ results: [], found: 0, notFound: 0, total: msg.total });
-      else if (msg.type === "result")  setFillResults(prev => ({ results: [...(prev?.results||[]), msg], found: msg.found, notFound: msg.notFound, total: msg.total }));
-      else if (msg.type === "done")    { setFillResults({ results: msg.results, found: msg.found, notFound: msg.notFound, total: msg.total }); setFillLoading(false); }
-      else if (msg.type === "error")   { setFillResults(prev => ({ ...(prev||{}), error: msg.message })); setFillLoading(false); }
-    });
+  // Run whichever enrichment endpoints are selected, track both done before finishing.
+  function handleEnrich() {
+    const wantSpeeds  = enrichFields.stats || enrichFields.images;
+    const wantHeights = enrichFields.heights && nullCount > 0;
+    if (!wantSpeeds && !wantHeights) return;
+
+    setEnrichRunning(true);
+    setEnrichResults({ speeds: null, heights: null, finished: false });
+
+    let pendingOps = (wantSpeeds ? 1 : 0) + (wantHeights ? 1 : 0);
+    const markDone = () => { if (--pendingOps === 0) { setEnrichRunning(false); setEnrichResults(prev => ({ ...prev, finished: true })); } };
+
+    if (wantSpeeds) {
+      postSSE("/api/fill-speeds", { parks, fields: enrichFields }, msg => {
+        if (msg.type === "start")       setEnrichResults(prev => ({ ...prev, speeds: { results: [], found: 0, notFound: 0, total: msg.total } }));
+        else if (msg.type === "result") setEnrichResults(prev => ({ ...prev, speeds: { results: [...(prev?.speeds?.results||[]), msg], found: msg.found, notFound: msg.notFound, total: msg.total } }));
+        else if (msg.type === "done")   { setEnrichResults(prev => ({ ...prev, speeds: { results: msg.results, found: msg.found, notFound: msg.notFound, total: msg.total } })); markDone(); }
+        else if (msg.type === "error")  { setEnrichResults(prev => ({ ...prev, speeds: { ...(prev?.speeds||{}), error: msg.message } })); markDone(); }
+      });
+    }
+
+    if (wantHeights) {
+      postSSE("/api/fill-heights", { parks }, msg => {
+        if (msg.type === "start")       setEnrichResults(prev => ({ ...prev, heights: { results: [], found: 0, notFound: 0, total: msg.total } }));
+        else if (msg.type === "result") setEnrichResults(prev => ({ ...prev, heights: { results: [...(prev?.heights?.results||[]), msg], found: msg.found, notFound: msg.notFound, total: msg.total } }));
+        else if (msg.type === "done")   { setEnrichResults(prev => ({ ...prev, heights: { results: msg.results, found: msg.found, notFound: msg.notFound, total: msg.total } })); markDone(); }
+        else if (msg.type === "error")  { setEnrichResults(prev => ({ ...prev, heights: { ...(prev?.heights||{}), error: msg.message } })); markDone(); }
+      });
+    }
   }
 
-  function handleApplyFillHeights() {
-    const updates = (fillResults?.results||[]).filter(r => r.height != null);
-    if (updates.length) onApplyHeights(updates);
-    setFillResults(null);
+  function handleApplyEnrich() {
+    const speedsUpdates = (enrichResults?.speeds?.results||[]).filter(r =>
+      r.speedMph != null || r.heightFt != null || r.yearOpened != null || r.manufacturer || r.model || r.material || r.style || r.imageUrl
+    );
+    const heightsUpdates = (enrichResults?.heights?.results||[]).filter(r => r.height != null);
+    if (speedsUpdates.length)  onApplySpeeds(speedsUpdates);
+    if (heightsUpdates.length) onApplyHeights(heightsUpdates);
+    setEnrichResults(null);
   }
 
   function handleScrapeAll() {
@@ -2064,25 +2089,6 @@ function GeneralSettings({ parks, onApplyHeights, onApplyScrapedAll, onApplySpee
     }
     if (updates.length) onApplyScrapedAll(updates);
     setScrapeAll(null);
-  }
-
-  function handleEnrich() {
-    setEnrichRunning(true);
-    setEnrichResults({ results: [], found: 0, notFound: 0, total: 0 });
-    postSSE("/api/fill-speeds", { parks, fields: enrichFields }, msg => {
-      if (msg.type === "start")        setEnrichResults({ results: [], found: 0, notFound: 0, total: msg.total });
-      else if (msg.type === "result")  setEnrichResults(prev => ({ results: [...(prev?.results||[]), msg], found: msg.found, notFound: msg.notFound, total: msg.total }));
-      else if (msg.type === "done")    { setEnrichResults({ results: msg.results, found: msg.found, notFound: msg.notFound, total: msg.total, finished: true }); setEnrichRunning(false); }
-      else if (msg.type === "error")   { setEnrichResults(prev => ({ ...(prev||{}), error: msg.message, finished: true })); setEnrichRunning(false); }
-    });
-  }
-
-  function handleApplyEnrich() {
-    const updates = (enrichResults?.results||[]).filter(r =>
-      r.speedMph != null || r.heightFt != null || r.yearOpened != null || r.manufacturer || r.model || r.material || r.style || r.imageUrl
-    );
-    if (updates.length) onApplySpeeds(updates);
-    setEnrichResults(null);
   }
 
   const actionBtn = (onClick, disabled, label) => (
@@ -2107,62 +2113,97 @@ function GeneralSettings({ parks, onApplyHeights, onApplyScrapedAll, onApplySpee
 
   const resultsDivider = { marginTop:T.s4, borderTop:`1px solid ${T.border}`, paddingTop:T.s4 };
 
+  // Counts for the Run All button disable logic
+  const enrichIncomplete = (enrichFields.stats ? incompleteStats : 0) + (enrichFields.images ? incompleteImgs : 0) + (enrichFields.heights ? nullCount : 0);
+  const nothingSelected  = !enrichFields.stats && !enrichFields.images && !enrichFields.heights;
+
+  // Combine running progress label
+  const speedsTotal   = enrichResults?.speeds?.total   || 0;
+  const heightsTotal  = enrichResults?.heights?.total  || 0;
+  const speedsDone    = enrichResults?.speeds?.results?.length  || 0;
+  const heightsDone   = enrichResults?.heights?.results?.length || 0;
+  const enrichProgress = enrichRunning ? `${speedsDone + heightsDone}/${speedsTotal + heightsTotal || "…"}…` : "Run All";
+
   return (
     <div style={{ flex:1, overflowY:"auto", padding:"24px 28px", maxWidth:780 }}>
       <div style={{ fontSize:T.flg, fontWeight:T.wHeavy, color:T.ink, marginBottom:T.s1 }}>Data Operations</div>
       <div style={{ fontSize:T.fbase, color:T.textFaint, marginBottom:T.s7 }}>Bulk enrichment and scraping across all parks and coasters.</div>
 
-      {/* ── Enrich from RCDB & Wikimedia ── */}
+      {/* ── Enrich card: RCDB stats/images + Wikipedia heights ── */}
       {card(<>
         <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>
           <div style={{ flex:1, minWidth:200 }}>
-            <div style={{ fontSize:T.fmd, fontWeight:T.wBold, color:T.ink }}>Enrich from RCDB & Wikimedia</div>
-            <div style={{ fontSize:T.fsm, color:T.textLo, marginTop:2 }}>Fill missing stats and images for all operating coasters across every park.</div>
+            <div style={{ fontSize:T.fmd, fontWeight:T.wBold, color:T.ink }}>Enrich Coaster Data</div>
+            <div style={{ fontSize:T.fsm, color:T.textLo, marginTop:2 }}>Fill missing data for all operating coasters. Stats and images from RCDB & Wikimedia; heights from Wikipedia.</div>
             <div style={{ display:"flex", gap:T.s5, marginTop:T.s3, flexWrap:"wrap" }}>
-              {["stats","images"].map(field => {
-                const count = field === "stats" ? incompleteStats : incompleteImgs;
-                return (
-                  <label key={field} style={{ display:"flex", alignItems:"center", gap:6, cursor: enrichRunning ? "default" : "pointer", fontSize:T.fsm, color: enrichRunning ? T.textFaint : T.textLo, userSelect:"none" }}>
-                    <input type="checkbox" checked={enrichFields[field]} disabled={enrichRunning}
-                      onChange={e => setEnrichFields(f => ({ ...f, [field]: e.target.checked }))}
-                      style={{ accentColor:T.accent }}/>
-                    {field.charAt(0).toUpperCase()+field.slice(1)} · {count} missing
-                  </label>
-                );
-              })}
+              <label style={{ display:"flex", alignItems:"center", gap:6, cursor: enrichRunning ? "default" : "pointer", fontSize:T.fsm, color: enrichRunning ? T.textFaint : T.textLo, userSelect:"none" }}>
+                <input type="checkbox" checked={enrichFields.stats} disabled={enrichRunning} onChange={e => setEnrichFields(f => ({ ...f, stats: e.target.checked }))} style={{ accentColor:T.accent }}/>
+                Stats · {incompleteStats} missing
+              </label>
+              <label style={{ display:"flex", alignItems:"center", gap:6, cursor: enrichRunning ? "default" : "pointer", fontSize:T.fsm, color: enrichRunning ? T.textFaint : T.textLo, userSelect:"none" }}>
+                <input type="checkbox" checked={enrichFields.images} disabled={enrichRunning} onChange={e => setEnrichFields(f => ({ ...f, images: e.target.checked }))} style={{ accentColor:T.accent }}/>
+                Images · {incompleteImgs} missing
+              </label>
+              <label style={{ display:"flex", alignItems:"center", gap:6, cursor: enrichRunning ? "default" : "pointer", fontSize:T.fsm, color: enrichRunning ? T.textFaint : T.textLo, userSelect:"none" }}>
+                <input type="checkbox" checked={enrichFields.heights} disabled={enrichRunning} onChange={e => setEnrichFields(f => ({ ...f, heights: e.target.checked }))} style={{ accentColor:T.accent }}/>
+                Heights · {nullCount} missing
+              </label>
             </div>
           </div>
-          {(() => {
-            const incomplete = (enrichFields.stats ? incompleteStats : 0) + (enrichFields.images ? incompleteImgs : 0);
-            const dis = enrichRunning || incomplete === 0 || (!enrichFields.stats && !enrichFields.images);
-            return actionBtn(handleEnrich, dis, enrichRunning ? `${(enrichResults?.results?.length)||0}/${enrichResults?.total||"…"}…` : "Run All");
-          })()}
+          {actionBtn(handleEnrich, enrichRunning || enrichIncomplete === 0 || nothingSelected, enrichProgress)}
         </div>
+
         {enrichResults && (() => {
-          const found = (enrichResults.results||[]).filter(r => r.speedMph!=null||r.heightFt!=null||r.yearOpened!=null||r.manufacturer||r.model||r.material||r.style||r.imageUrl);
+          const speedsFound   = (enrichResults.speeds?.results||[]).filter(r => r.speedMph!=null||r.heightFt!=null||r.yearOpened!=null||r.manufacturer||r.model||r.material||r.style||r.imageUrl);
+          const heightsFound  = (enrichResults.heights?.results||[]).filter(r => r.height != null);
+          const totalApply    = speedsFound.length + heightsFound.length;
           return (
             <div style={resultsDivider}>
-              {enrichResults.error && <div style={{ fontSize:T.fsm, color:"#f87171", marginBottom:T.s2 }}>⚠ {enrichResults.error}</div>}
-              <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s3 }}>
-                Found <strong style={{color:"#4ade80"}}>{enrichResults.found}</strong> of {enrichResults.total}
-                {enrichResults.notFound > 0 && <span style={{color:"#f87171"}}> · {enrichResults.notFound} not found</span>}
-              </div>
-              <div style={{ maxHeight:260, overflowY:"auto", marginBottom:T.s3 }}>
-                {(enrichResults.results||[]).map((r, i) => {
-                  const hasData = r.speedMph!=null||r.heightFt!=null||r.yearOpened!=null||r.manufacturer||r.model||r.material||r.style||r.imageUrl;
-                  return (
-                    <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"3px 0", borderBottom:`1px solid ${T.hair}`, fontSize:T.fxs }}>
-                      <span style={{ color: hasData ? T.text : T.textFaint, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.parkName} — {r.coasterName}</span>
-                      <span style={{ color: hasData ? "#4ade80" : T.textFaint, flexShrink:0, marginLeft:T.s2 }}>
-                        {hasData ? [r.speedMph!=null&&`${r.speedMph}mph`, r.heightFt!=null&&`${r.heightFt}ft`, r.yearOpened, r.imageUrl&&"📷"].filter(Boolean).join(" · ") : "—"}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+              {/* speeds results */}
+              {enrichResults.speeds && <>
+                {enrichResults.speeds.error && <div style={{ fontSize:T.fsm, color:"#f87171", marginBottom:T.s2 }}>⚠ Stats/images: {enrichResults.speeds.error}</div>}
+                {enrichResults.speeds.total > 0 && (
+                  <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s2 }}>
+                    Stats/images — found <strong style={{color:"#4ade80"}}>{enrichResults.speeds.found}</strong> of {enrichResults.speeds.total}
+                    {enrichResults.speeds.notFound > 0 && <span style={{color:"#f87171"}}> · {enrichResults.speeds.notFound} not found</span>}
+                  </div>
+                )}
+                {speedsFound.length > 0 && (
+                  <div style={{ maxHeight:200, overflowY:"auto", marginBottom:T.s2 }}>
+                    {speedsFound.map((r, i) => (
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"3px 0", borderBottom:`1px solid ${T.hair}`, fontSize:T.fxs }}>
+                        <span style={{ color:T.text, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.parkName} — {r.coasterName}</span>
+                        <span style={{ color:"#4ade80", flexShrink:0, marginLeft:T.s2 }}>
+                          {[r.speedMph!=null&&`${r.speedMph}mph`, r.heightFt!=null&&`${r.heightFt}ft`, r.yearOpened, r.imageUrl&&"📷"].filter(Boolean).join(" · ")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>}
+              {/* heights results */}
+              {enrichResults.heights && <>
+                {enrichResults.heights.error && <div style={{ fontSize:T.fsm, color:"#f87171", marginBottom:T.s2 }}>⚠ Heights: {enrichResults.heights.error}</div>}
+                {enrichResults.heights.total > 0 && (
+                  <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s2 }}>
+                    Heights — found <strong style={{color:"#4ade80"}}>{enrichResults.heights.found}</strong> of {enrichResults.heights.total} via Wikipedia
+                    {enrichResults.heights.notFound > 0 && <span style={{color:"#f87171"}}> · {enrichResults.heights.notFound} not found</span>}
+                  </div>
+                )}
+                {heightsFound.length > 0 && (
+                  <div style={{ maxHeight:160, overflowY:"auto", marginBottom:T.s2 }}>
+                    {heightsFound.map((r, i) => (
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"3px 0", borderBottom:`1px solid ${T.hair}`, fontSize:T.fxs }}>
+                        <span style={{ color:T.text, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.coasterName}</span>
+                        <span style={{ color:"#4ade80", fontWeight:T.wBold, flexShrink:0, marginLeft:T.s2 }}>{r.height}"</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>}
               {enrichResults.finished && (
-                <div style={{ display:"flex", gap:T.s2 }}>
-                  {found.length > 0 && actionBtn(handleApplyEnrich, false, `Apply ${found.length} update${found.length!==1?"s":""}`)}
+                <div style={{ display:"flex", gap:T.s2, marginTop:T.s3 }}>
+                  {totalApply > 0 && actionBtn(handleApplyEnrich, false, `Apply ${totalApply} update${totalApply!==1?"s":""}`)}
                   {dismissBtn(() => setEnrichResults(null))}
                 </div>
               )}
@@ -2224,42 +2265,6 @@ function GeneralSettings({ parks, onApplyHeights, onApplyScrapedAll, onApplySpee
                   {dismissBtn(() => setScrapeAll(null))}
                 </div>
               )}
-            </div>
-          );
-        })()}
-      </>)}
-
-      {/* ── Fill Heights from Wikipedia ── */}
-      {card(<>
-        <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>
-          <div style={{ flex:1, minWidth:200 }}>
-            <div style={{ fontSize:T.fmd, fontWeight:T.wBold, color:T.ink }}>Fill Heights from Wikipedia</div>
-            <div style={{ fontSize:T.fsm, color:T.textLo, marginTop:2 }}>Look up minimum heights for <strong style={{color: nullCount>0 ? "#facc15" : T.textMid}}>{nullCount}</strong> coaster{nullCount!==1?"s":""} missing height data.</div>
-          </div>
-          {actionBtn(handleFillHeights, fillLoading || nullCount===0, fillLoading ? "Looking up…" : "Auto-fill All")}
-        </div>
-        {fillResults && (() => {
-          const found = (fillResults.results||[]).filter(r => r.height != null);
-          return (
-            <div style={resultsDivider}>
-              {fillResults.error && <div style={{ fontSize:T.fsm, color:"#f87171", marginBottom:T.s2 }}>⚠ {fillResults.error}</div>}
-              <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s3 }}>
-                Found <strong style={{color:"#4ade80"}}>{fillResults.found}</strong> of {fillResults.total} via Wikipedia
-                {fillResults.notFound > 0 && <span style={{color:"#f87171"}}> · {fillResults.notFound} not found</span>}
-              </div>
-              <div style={{ maxHeight:200, overflowY:"auto", marginBottom:T.s3 }}>
-                {(fillResults.results||[]).map((r, i) => (
-                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"3px 0", borderBottom:`1px solid ${T.hair}`, fontSize:T.fxs }}>
-                    <span style={{ color: r.height ? T.text : T.textFaint, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.coasterName}</span>
-                    {r.height ? <span style={{ color:"#4ade80", fontWeight:T.wBold, flexShrink:0, marginLeft:T.s2 }}>{r.height}"</span>
-                              : <span style={{ color:T.textFaint, flexShrink:0, marginLeft:T.s2 }}>—</span>}
-                  </div>
-                ))}
-              </div>
-              <div style={{ display:"flex", gap:T.s2 }}>
-                {found.length > 0 && actionBtn(handleApplyFillHeights, false, `Apply ${found.length} update${found.length!==1?"s":""}`)}
-                {dismissBtn(() => setFillResults(null))}
-              </div>
             </div>
           );
         })()}
