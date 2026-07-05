@@ -153,19 +153,41 @@ All items from the original IA §8 review are done — see Done archive: "Coaste
 detail modal", "Coaster import = delta merge", "Top-bar rider pills deep-link",
 "By-rider visited-parks-scoped totals", "Park `family` field". Nothing open here.
 
-## Nice-to-haves
-
-- **Settings area to auto-geocode park map coordinates.** Correction to an earlier
-  note here: `parks.lat`/`lng` are already real per-household columns with a manual
-  hand-entry UI (desktop park edit form) — `PARK_COORDS_BY_NORM` is only a fallback
-  for parks that haven't set one. What's still missing is the **auto-geocode** part:
-  a Settings ▸ Parks flow that looks up a park's coordinates from its name/address via
-  **Nominatim/OpenStreetMap** (decided: free, no API key — accept the rate limit/
-  precision tradeoff), reviewed/applied like the existing height-scrape review panel.
-  Also: the mobile add/edit park form has no lat/lng inputs at all (desktop-only today).
 ---
 
 ## Done (this build) — for reference
+
+**settingsupdates.md sweep — badges, geocoding, image search, manufacturer data cleanup.**
+- **Park badges → multi-select.** `badge` (single freeform text, never actually
+  displayed anywhere) is now `badges` (array) picked via checkboxes from a fixed
+  preset (Home Park / Pass Holder / Favorite), rendered as icon chips in the
+  Parks left-nav row and the detail header. Migration `00000000000008` applied.
+- **Auto-geocode park coordinates.** A "Find by name" button next to the lat/lng
+  fields queries Nominatim/OpenStreetMap and fills them (still manually
+  overridable); added to the mobile edit-park form too (previously desktop-only).
+- **One-off "Find image" button** on the coaster detail modal — new
+  `/api/find-image` endpoint reuses the existing RCDB/Wikimedia lookup helpers
+  for a single coaster on demand, instead of requiring the full bulk enrich job.
+- **Manufacturer/model data cleanup.** Backfilled production: normalized 91
+  coasters' manufacturer from RCDB's full legal name to the canonical
+  abbreviation, and cleared 236 coasters' `model` field where it just duplicated
+  material+style (e.g. `"Steel Sit Down"`) instead of a real model name — no
+  real model value existed anywhere to recover, so a future "Enrich Coaster
+  Data" run will refill them from RCDB now that the server also treats a blank
+  model as missing (previously only checked blank manufacturer).
+- **"Stop heights" → "Stop scrape"** button copy fix.
+- Fixed a real data-loss bug found along the way: editing a coaster via the
+  Settings grid silently wiped `material`/`style`/`heightFt`/`yearOpened`/
+  `imageUrl`/rcdb fields on every save (the handler built a bare replacement
+  object instead of merging onto the existing record).
+- Fixed production CORS: the scraper's `FRONTEND_URL` allowlist on Render
+  hadn't been updated when `coasterattack.com` was added as a custom domain,
+  so scraper calls silently failed from production while working fine from
+  localhost (Vite's dev proxy bypasses CORS). Documented the fix requirement
+  in `CONTRIBUTING.md` for future domain changes.
+- Not done: a management UI for the `MANUFACTURER_OPTIONS` dropdown list itself
+  (still a hardcoded const) — would need a new per-household settings store,
+  which doesn't exist yet (only the dedicated `regions` table today).
 
 **Desktop park-detail table redesign (user feedback).** Addressed all four
 notes on the Parks ▸ detail table:
