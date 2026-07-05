@@ -279,6 +279,17 @@ const KNOWN_MANUFACTURERS = [
   "E&F Miler Industries", "Miler", "Wisdom Rides", "Wisdom", "Reverchon",
   "Pinfari", "Mondial", "Larson International", "Larson", "Setpoint",
 ].sort((a, b) => b.length - a.length); // longest first so "B&M" doesn't pre-empt "Bolliger & Mabillard"
+
+// Canonical dropdown options — one entry per manufacturer, preferring the
+// common industry abbreviation (matches KNOWN_MANUFACTURERS above so hand
+// picks stay in the same vocabulary the RCDB-import splitter recognizes).
+const MANUFACTURER_OPTIONS = [
+  "B&M", "Intamin", "Vekoma", "Arrow Dynamics", "Premier Rides", "S&S Worldwide",
+  "Mack Rides", "GCI", "PTC", "Gerstlauer", "Zamperla", "Chance Rides",
+  "CCI", "Schwarzkopf", "Zierer", "Maurer Söhne", "The Gravity Group",
+  "Dinn Corporation", "RMC", "E&F Miler Industries", "Wisdom Rides",
+  "Reverchon", "Pinfari", "Mondial", "Larson International", "Setpoint",
+];
 function splitManufacturerModel(typeStr) {
   const s = String(typeStr || "").trim();
   if (!s) return { manufacturer: "", model: "" };
@@ -339,6 +350,23 @@ function normalizeCoaster(raw = {}) {
 // Display-only join — every render site that used to show `c.type` keeps working
 // without auditing each one individually; manufacturer/model are the stored fields.
 const coasterType = c => [c?.manufacturer, c?.model].filter(Boolean).join(" ");
+
+// Full manufacturer name → common industry abbreviation, for display sites that
+// want the short form regardless of which spelling is actually stored (older
+// hand-entered data and some RCDB imports carry the full name, not the abbreviation).
+const MANUFACTURER_ABBR = {
+  "Bolliger & Mabillard": "B&M", "Intamin": "Intamin", "Vekoma": "Vekoma",
+  "Arrow Dynamics": "Arrow", "Premier Rides": "Premier", "S&S Worldwide": "S&S",
+  "Mack Rides": "Mack", "Great Coasters International": "GCI",
+  "Philadelphia Toboggan Coasters": "PTC", "Gerstlauer": "Gerstlauer",
+  "Zamperla": "Zamperla", "Chance Rides": "Chance", "Chance Morgan": "Chance",
+  "Custom Coasters International": "CCI", "Anton Schwarzkopf": "Schwarzkopf",
+  "Rocky Mountain Construction": "RMC", "E&F Miler Industries": "Miler",
+  "Wisdom Rides": "Wisdom", "Larson International": "Larson",
+  "The Gravity Group": "Gravity Group", "Dinn Corporation": "Dinn",
+  "Maurer Söhne": "Maurer",
+};
+const abbrMfr = m => MANUFACTURER_ABBR[m] || m || "";
 
 // Normalize a coaster name for *fallback* matching: lower-case, then collapse every
 // non-alphanumeric run (apostrophes, colons, ™/®/℠, dashes, parens, periods…) to a
@@ -726,6 +754,42 @@ function HeightLegend({ color = T.accent, states = RIDE_STATUS_ORDER }) {
   );
 }
 
+// Same legend content, but tucked behind a small "ⓘ" affordance instead of
+// sitting permanently on the page — desktop feedback was that the always-on
+// key row was more screen real estate than the info was worth.
+function LegendInfo({ color = T.accent, states = RIDE_STATUS_ORDER }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position:"relative", display:"inline-block" }}
+      onMouseEnter={()=>setOpen(true)} onMouseLeave={()=>setOpen(false)}>
+      <button onFocus={()=>setOpen(true)} onBlur={()=>setOpen(false)} title="Height-status legend" style={{
+        background:"none", border:`1px solid ${T.border2}`, color:T.textLo, borderRadius:"50%",
+        width:18, height:18, fontSize:T.fxs, cursor:"pointer", fontFamily:"inherit", lineHeight:1, padding:0,
+      }}>ⓘ</button>
+      {open && (
+        <div style={{ position:"absolute", zIndex:5, top:"calc(100% + 6px)", left:0, background:T.panel, border:`1px solid ${T.border2}`, borderRadius:T.r3, padding:T.s3, boxShadow:"0 8px 24px rgba(0,0,0,0.4)", whiteSpace:"nowrap" }}>
+          <HeightLegend color={color} states={states}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Small row thumbnail with a graceful fallback: a broken/hotlink-blocked
+// imageUrl still resolves to the placeholder swatch instead of leaving the
+// cell blank (a plain onError={hide} on the <img> has nothing to fall back
+// to once the element disappears).
+function RowThumb({ url, size = 28, radius, placeholder }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [url]);
+  const r = radius ?? T.r2;
+  if (url && !broken) {
+    return <img src={url} alt="" style={{ width:size, height:size, flexShrink:0, borderRadius:r, objectFit:"cover", border:`1px solid ${T.border}` }} onError={()=>setBroken(true)}/>;
+  }
+  if (placeholder) return placeholder;
+  return <div style={{ width:size, height:size, flexShrink:0, borderRadius:r, background:T.panel2, border:`1px solid ${T.hair}` }}/>;
+}
+
 function CreditBtn({ done, color, onClick, title }) {
   return (
     <button onClick={onClick} title={title} style={{
@@ -790,10 +854,14 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState(() => modalDraftFrom(coaster));
   const [err, setErr]         = useState("");
+  const [mfrOther, setMfrOther] = useState(() => !!coaster.manufacturer && !MANUFACTURER_OPTIONS.includes(coaster.manufacturer));
   const panelRef = useRef(null);
 
   // Re-seed the draft if the underlying coaster identity changes (e.g. reopened).
-  useEffect(() => { setDraft(modalDraftFrom(coaster)); setEditing(false); setErr(""); }, [coaster.name, park.id]);
+  useEffect(() => {
+    setDraft(modalDraftFrom(coaster)); setEditing(false); setErr("");
+    setMfrOther(!!coaster.manufacturer && !MANUFACTURER_OPTIONS.includes(coaster.manufacturer));
+  }, [coaster.name, park.id]);
 
   // Esc closes; lock background scroll while open; focus the panel for a11y.
   useEffect(() => {
@@ -865,8 +933,20 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
             </Field>
             <div style={{ display:"flex", gap:T.s4 }}>
               <Field label="Manufacturer">
-                <input value={draft.manufacturer} onChange={e=>st("manufacturer", e.target.value)} placeholder="e.g. B&M"
-                  style={{ width:"100%", boxSizing:"border-box", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none" }}/>
+                {mfrOther ? (
+                  <input value={draft.manufacturer} onChange={e=>st("manufacturer", e.target.value)} placeholder="e.g. Custom Coasters Inc." autoFocus
+                    style={{ width:"100%", boxSizing:"border-box", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none" }}/>
+                ) : (
+                  <select value={draft.manufacturer} onChange={e=>{
+                      if (e.target.value === "__other__") { setMfrOther(true); st("manufacturer", ""); }
+                      else st("manufacturer", e.target.value);
+                    }}
+                    style={{ width:"100%", boxSizing:"border-box", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none" }}>
+                    <option value="">—</option>
+                    {MANUFACTURER_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                    <option value="__other__">Other…</option>
+                  </select>
+                )}
               </Field>
               <Field label="Model">
                 <input value={draft.model} onChange={e=>st("model", e.target.value)} placeholder="e.g. Inverted"
@@ -946,11 +1026,25 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
 // (via the list or a map marker). The detail defaults to a neutral Overview;
 // an inline rider lens switches the table into per-rider height eligibility.
 // ═══════════════════════════════════════════════════════════════════════════
-function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAll, onClearAll, onOpenCoaster }) {
+function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAll, onClearAll, onOpenCoaster, onAddPark }) {
   const [selectedId,  setSelectedId]  = useState(null);   // null = show the Map; a park id = show its detail
   const [lensRiderId, setLensRiderId] = useState(null);   // null = Overview (neutral reference)
   const [hoverId,     setHoverId]     = useState(null);   // map marker hover
+  const [addingPark,  setAddingPark]  = useState(false);
+  const [addForm,     setAddForm]     = useState({ name:"", tag:"", region: Object.keys(REGIONS)[0] || "NE", family:"" });
+  const [addError,    setAddError]    = useState("");
   const sort = useCoasterSort();
+
+  function handleAddPark(e) {
+    e.preventDefault();
+    if (!addForm.name.trim()) { setAddError("Name is required."); return; }
+    if (!addForm.tag.trim())  { setAddError("Airport code is required."); return; }
+    const park = { id: uid(), name: addForm.name.trim(), tag: addForm.tag.trim().toUpperCase(), region: addForm.region, badge: "", family: addForm.family || undefined, coasters: [] };
+    onAddPark(park);
+    setAddForm({ name:"", tag:"", region: Object.keys(REGIONS)[0] || "NE", family:"" });
+    setAddError(""); setAddingPark(false);
+    setSelectedId(park.id);
+  }
 
   const park       = visibleParks.find(p => p.id === selectedId) || null;   // null → Map view
   const lensRider  = riders.find(r => r.id === lensRiderId) || null;        // null → overview
@@ -973,9 +1067,33 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
   // ── Left panel: park list grouped by region ──────────────────────────────
   const leftPanel = (
     <div className="ct-sidenav" style={{ width:260, flexShrink:0, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-      <div style={{ background:T.panel2, borderBottom:`1px solid ${T.border}`, padding:`${T.s3}px ${T.s5}px`, flexShrink:0 }}>
+      <div style={{ background:T.panel2, borderBottom:`1px solid ${T.border}`, padding:`${T.s3}px ${T.s5}px`, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"space-between", gap:T.s2 }}>
         <span style={{ ...labelCss, fontSize:T.fsm, color:T.textFaint, letterSpacing:"0.08em" }}>Parks</span>
+        {onAddPark && (
+          <button onClick={() => { setAddingPark(a => !a); setAddError(""); }} title="Add park" style={{
+            background: addingPark ? T.border : "transparent", border:`1px solid ${addingPark ? T.border2 : T.border}`,
+            color: addingPark ? T.textLo : T.accent, borderRadius:T.r2, padding:"2px 7px", cursor:"pointer",
+            fontSize:T.fxs, fontWeight:T.wBold, fontFamily:"inherit", lineHeight:1.6,
+          }}>{addingPark ? "✕" : "＋"}</button>
+        )}
       </div>
+      {addingPark && (
+        <form onSubmit={handleAddPark} style={{ background:T.panel, borderBottom:`1px solid ${T.border}`, padding:T.s4, display:"flex", flexDirection:"column", gap:T.s3, flexShrink:0 }}>
+          {addError && <div style={{ fontSize:T.fxs, color:"#f87171" }}>{addError}</div>}
+          <input value={addForm.name} onChange={e => setAddForm(f=>({...f, name:e.target.value}))} placeholder="Park name" style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 8px", color:T.ink, fontSize:T.fsm, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }}/>
+          <div style={{ display:"flex", gap:T.s2 }}>
+            <input value={addForm.tag} onChange={e => setAddForm(f=>({...f, tag:e.target.value}))} placeholder="Code" maxLength={4} style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 8px", color:T.ink, fontSize:T.fsm, fontFamily:"inherit", width:"100%", boxSizing:"border-box", textTransform:"uppercase" }}/>
+            <select value={addForm.region} onChange={e => setAddForm(f=>({...f, region:e.target.value}))} style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 8px", color:T.ink, fontSize:T.fsm, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }}>
+              {Object.entries(REGIONS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <select value={addForm.family} onChange={e => setAddForm(f=>({...f, family:e.target.value}))} style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 8px", color:T.ink, fontSize:T.fsm, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }}>
+            <option value="">— Independent —</option>
+            {Object.entries(PARK_FAMILIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <button type="submit" style={{ background:T.accent, border:"none", borderRadius:T.r2, padding:"6px 0", color:"#0f172a", fontWeight:T.wBold, fontSize:T.fsm, fontFamily:"inherit", cursor:"pointer" }}>Add park</button>
+        </form>
+      )}
       <div style={{ overflowY:"auto", flex:1, padding:"8px 6px" }}>
         {/* Map / all-parks entry */}
         <button onClick={() => setSelectedId(null)} style={{
@@ -1117,21 +1235,23 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
         ))}
       </div>
 
-      {/* Stat cards (reference) */}
+      {/* Stat cards (reference) — trimmed to what feedback called genuinely
+          useful: the total and (when a rider lens is active) their can-ride
+          count. The old min-height-band breakdown was dropped (arbitrary
+          per-band colors, redundant with the table itself); the unknown-height
+          count already surfaces in the subtitle above ("N missing a height"). */}
       <div style={{ display:"flex", gap:T.s4, marginBottom:T.s6, flexWrap:"wrap" }}>
         <StatCard label="Coasters" value={avail} color={T.ink}/>
-        {HEIGHT_BANDS.map(b => (
-          <StatCard key={b.label} label={`Min ${b.label}`} value={live.filter(c=>c.min!=null&&b.test(c.min)).length} color={b.color}/>
-        ))}
-        <StatCard label="Unknown" value={live.filter(c=>c.min==null).length} color={T.textFaint}/>
         {lensRider && <StatCard label={`${lensRider.name} can ride`} value={can} color={lensRider.color}/>}
       </div>
 
       {/* Coaster table — last column adapts to the active lens */}
       <div style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r5, overflow:"hidden" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 60px 56px 64px", padding:"8px 14px", background:T.panel2, borderBottom:`1px solid ${T.border}`, ...labelCss, gap:T.s2, alignItems:"center" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"32px 2fr 0.6fr 0.8fr 60px 56px 64px", padding:"8px 14px", background:T.panel2, borderBottom:`1px solid ${T.border}`, ...labelCss, gap:T.s2, alignItems:"center" }}>
+          <div/>
           <SortTh label="Coaster" col="name" sort={sort.sort} onSort={sort.onSort}/>
-          <SortTh label="Type" col="type" sort={sort.sort} onSort={sort.onSort}/>
+          <SortTh label="Manufacturer" col="type" sort={sort.sort} onSort={sort.onSort}/>
+          <div>Model</div>
           <SortTh label="Min" col="min" sort={sort.sort} onSort={sort.onSort} align="center"/>
           <div style={{textAlign:"center"}} title="Minimum height with a supervising adult">w/ adult</div>
           <div style={{textAlign:"center", color: lensRider ? lensRider.color : T.textFaint}}>{lensRider ? lensRider.name : "Racing"}</div>
@@ -1142,11 +1262,12 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
           const dim = lensRider && !eligible;
           const lowest = c.minAccompanied ?? c.min;   // lowest posted threshold, for the "need X" hint
           return (
-            <div key={c.name} style={{ display:"grid", gridTemplateColumns:"2fr 1fr 60px 56px 64px", padding:"8px 14px", borderBottom: i<arr.length-1?`1px solid ${T.hair}`:"none",
+            <div key={c.name} style={{ display:"grid", gridTemplateColumns:"32px 2fr 0.6fr 0.8fr 60px 56px 64px", padding:"8px 14px", borderBottom: i<arr.length-1?`1px solid ${T.hair}`:"none",
               background: lensRider
                 ? (eligible ? (i%2===0?"transparent":T.zebra) : (i%2===0?"#0a0510":"#070309"))
                 : (i%2===0?"transparent":T.zebra),
               alignItems:"center", gap:T.s2 }}>
+              <RowThumb url={c.imageUrl}/>
               <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                 {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px" }}>⇄</span>}
                 <span onClick={()=>onOpenCoaster(park.id, c)} title="View coaster details" onMouseEnter={e=>e.currentTarget.style.textDecoration="underline"} onMouseLeave={e=>e.currentTarget.style.textDecoration="none"} style={{ fontSize:T.fbase, fontWeight:T.wSemi, color: dim ? T.textGhost : T.text, cursor:"pointer" }}>{c.name}</span>
@@ -1154,7 +1275,8 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
                 {st==="no" && <span style={{ fontSize:T.fxs, color:T.textLo, marginLeft:2 }}>{lowest!=null ? `${lowest-lensRider.height}" too short` : "too short"}</span>}
                 {st==="unknown" && <span style={{ fontSize:T.fxs, color:T.textFaint, marginLeft:2 }}>{RIDE_STATUS.unknown.legend}</span>}
               </div>
-              <div style={{ fontSize:T.fsm, color:T.textFaint }}>{coasterType(c)}{c.speedMph!=null && <span style={{ color:T.textGhost }}> · {c.speedMph} mph</span>}</div>
+              <div style={{ fontSize:T.fsm, color:T.textFaint, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={c.manufacturer || ""}>{abbrMfr(c.manufacturer)}</div>
+              <div style={{ fontSize:T.fsm, color:T.textFaint, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.model || ""}{c.speedMph!=null && <span style={{ color:T.textGhost }}> · {c.speedMph} mph</span>}</div>
               <div style={{textAlign:"center"}}><HtBadge min={c.min}/></div>
               <div style={{textAlign:"center"}}><AccBadge value={c.minAccompanied}/></div>
               <div style={{textAlign:"center"}}>
@@ -1166,8 +1288,8 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
           );
         })}
       </div>
-      <div style={{ marginTop:T.s5, display:"flex", flexDirection:"column", gap:T.s2 }}>
-        {lensRider && <HeightLegend color={lensRider.color}/>}
+      <div style={{ marginTop:T.s5, display:"flex", alignItems:"center", gap:T.s3 }}>
+        {lensRider && <LegendInfo color={lensRider.color}/>}
         <div style={{ fontSize:T.fxs, color:T.textGhost }}>
           <span style={{color:"#818cf8"}}>⇄</span> = dueling/racing — both tracks count as separate credits
           {lensRider && <> · pick <strong style={{color:T.accent}}>🗺 Overview</strong> to see all coasters neutrally</>}
@@ -1374,7 +1496,8 @@ function RiderCreditsPanel({ rider, ridden, onToggle, visibleParks, allParks, on
                                   const isDone = ridden[rider.id]?.has(key);
                                   return (
                                     <div key={c.name} style={{ display:"grid", gridTemplateColumns:gridCols, padding:"7px 14px", borderBottom:i<arr.length-1?`1px solid ${T.hair}`:"none", background:isDone?`${rider.color}0a`:(i%2===0?"transparent":T.zebra), alignItems:"center", gap:T.s2 }}>
-                                      <div style={{ display:"flex", alignItems:"center", gap:5, minWidth:0 }}>
+                                      <div style={{ display:"flex", alignItems:"center", gap:7, minWidth:0 }}>
+                                        {!compact && <RowThumb url={c.imageUrl}/>}
                                         {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px" }}>⇄</span>}
                                         <span onClick={()=>onOpenCoaster(p.id, c)} title="View coaster details" onMouseEnter={e=>e.currentTarget.style.textDecoration="underline"} onMouseLeave={e=>e.currentTarget.style.textDecoration="none"} style={{ fontSize:T.fbase, fontWeight: isDone?T.wBold:T.wSemi, color: isDone ? T.ink : T.textMid, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor:"pointer" }}>{c.name}</span>
                                       </div>
@@ -1687,7 +1810,8 @@ function CreditTracker({ riders, ridden, onToggle, onSelectAll, onClearAll, visi
                   onMouseEnter={e => e.currentTarget.style.background = "#1e293b22"}
                   onMouseLeave={e => e.currentTarget.style.background = i%2===0 ? "transparent" : T.zebra}
                 >
-                  <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                    <RowThumb url={c.imageUrl}/>
                     {c.racing && <span style={{ fontSize:T.fxs, background:"#6366f122", color:"#818cf8", border:"1px solid #6366f133", borderRadius:T.r1, padding:"1px 4px", flexShrink:0 }}>⇄</span>}
                     <span onClick={()=>onOpenCoaster(parkData.id, c)} title="View coaster details" onMouseEnter={e=>e.currentTarget.style.textDecoration="underline"} onMouseLeave={e=>e.currentTarget.style.textDecoration="none"} style={{ fontSize:T.fbase, fontWeight:T.wSemi, color: anyDone ? T.text : T.textLo, cursor:"pointer" }}>{c.name}</span>
                   </div>
@@ -3489,13 +3613,11 @@ function PlanMode({ parks, riders, parkEditProps }) {
               <div key={c.name} style={{ background:T.panel, border:`1px solid ${T.border}`, borderRadius:T.r4, overflow:"hidden" }}>
                 <div style={{ display:"flex", gap:T.s4, padding:T.s4 }}>
                   {/* Thumbnail — real image if available, styled placeholder otherwise */}
-                  {c.imageUrl ? (
-                    <img src={c.imageUrl} alt={c.name} style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, objectFit:"cover", border:`1px solid ${T.border}` }}/>
-                  ) : (
+                  <RowThumb url={c.imageUrl} size={56} radius={T.r3} placeholder={
                     <div style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, background:`linear-gradient(135deg, ${matColor}33, ${matColor}11)`, border:`1px solid ${matColor}44`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>
                       🎢
                     </div>
-                  )}
+                  }/>
                   {/* Info */}
                   <div style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column", justifyContent:"center", gap:T.s1 }}>
                     <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name}</div>
@@ -3677,13 +3799,11 @@ function LogMode({ parks, riders, ridden, onToggle, onOpenCoaster }) {
                   style={{ display:"flex", gap:T.s4, padding:T.s4, cursor: onOpenCoaster ? "pointer" : "default" }}
                 >
                   {/* Thumbnail — real image if available, styled placeholder otherwise */}
-                  {c.imageUrl ? (
-                    <img src={c.imageUrl} alt={c.name} style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, objectFit:"cover", border:`1px solid ${T.border}` }}/>
-                  ) : (
+                  <RowThumb url={c.imageUrl} size={56} radius={T.r3} placeholder={
                     <div style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, background:`linear-gradient(135deg, ${matColor}33, ${matColor}11)`, border:`1px solid ${matColor}44`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>
                       🎢
                     </div>
-                  )}
+                  }/>
                   {/* Info */}
                   <div style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column", justifyContent:"center", gap:T.s1 }}>
                     <div style={{ fontSize:T.fbase, fontWeight:T.wBold, color:T.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name}</div>
@@ -3759,10 +3879,6 @@ export default function App() {
   const [view,         setView]         = useState("parks");
   const [ridersOpen,   setRidersOpen]   = useState(false); // mobile-only rider pills popover
   const [isMobile,     setIsMobile]     = useState(() => window.innerWidth < 640);
-  // Defaults to "riders" rather than "parks": Parks & Coasters editing now
-  // mostly happens inline from Plan mode, and its sub-nav button is hidden
-  // on mobile (see .ct-settings-parks-tab), so landing there by default
-  // would show orphaned content with no active tab highlighted.
   const [settingsTab,  setSettingsTab]  = useState(null);          // null = mobile menu; section id = content shown
   const [region, setRegion] = useState("ALL");
   const [riders, setRiders] = useState(null);
@@ -4060,9 +4176,6 @@ export default function App() {
     { id:"settings", Icon:IcoSettings, label:"Settings", region:false },
   ];
 
-  // "Parks & Coasters" is global-list browsing — on mobile that's redundant
-  // with the inline "✎ Edit park" entry point now in Plan mode, so it's
-  // hidden there (desktop keeps it; see .ct-settings-parks-tab in index.html).
   const SETTINGS_SUB = [
     { id:"general", label:"General",          desc:"Run scrapers, enrichers, and bulk data operations" },
     { id:"parks",   label:"Parks & Coasters", desc:"Add, edit, and enrich parks and coasters"          },
@@ -4163,7 +4276,7 @@ export default function App() {
         {view==="log" && <LogMode parks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden} onOpenCoaster={openCoaster}/>}
 
         {/* Parks tab — unified left nav with Explorer / Height sub-views */}
-        {view==="parks" && <ParksTab visibleParks={visibleParks} allParks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden} onSelectAll={selectAll} onClearAll={clearAll} onOpenCoaster={openCoaster}/>}
+        {view==="parks" && <ParksTab visibleParks={visibleParks} allParks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden} onSelectAll={selectAll} onClearAll={clearAll} onOpenCoaster={openCoaster} onAddPark={addPark}/>}
 
         {/* Credits tab */}
         {view==="credits" && (isMobile
