@@ -2552,6 +2552,25 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
   const [scrapeLoading, setScrapeLoading] = useState(false);
   const [scrapeResult,  setScrapeResult]  = useState(null);   // {matched,unmatched...} or {error}
 
+  // Geocode-by-name state (Nominatim/OpenStreetMap — free, no API key)
+  const [geocoding,   setGeocoding]   = useState(false);
+  const [geocodeMsg,  setGeocodeMsg]  = useState("");
+  async function handleGeocode(name, setDraft) {
+    setGeocoding(true); setGeocodeMsg("");
+    try {
+      const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(name)}`);
+      const data = await resp.json();
+      if (!Array.isArray(data) || !data.length) { setGeocodeMsg("No match found — try adjusting the name, or enter coordinates by hand."); return; }
+      const { lat, lon, display_name } = data[0];
+      setDraft(d => ({ ...d, lat: Number(lat).toFixed(4), lng: Number(lon).toFixed(4) }));
+      setGeocodeMsg(`Found: ${display_name}`);
+    } catch (e) {
+      setGeocodeMsg(`Lookup failed: ${e.message}`);
+    } finally {
+      setGeocoding(false);
+    }
+  }
+
   // Mobile layout detection (independent of App's isMobile — ManageParks is also rendered inside PlanMode)
   const [mpMobile, setMpMobile] = useState(() => window.innerWidth < 640);
   useEffect(() => {
@@ -2973,6 +2992,17 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
               </div>
               <div style={{ marginBottom:10 }}>{badgeCheckboxes(parkDraft.badges, badges=>setParkDraft(d=>({...d,badges})))}</div>
               <div style={{ marginBottom:12 }}>{mInp(parkDraft.officialUrl, e=>setParkDraft(d=>({...d,officialUrl:e.target.value})), "Official height-chart URL (optional)")}</div>
+              <div style={{ marginBottom:12 }}>
+                <div style={{ display:"flex", gap:8, marginBottom:6 }}>
+                  {mInp(parkDraft.lat, e=>setParkDraft(d=>({...d,lat:e.target.value})), "Latitude (optional)")}
+                  {mInp(parkDraft.lng, e=>setParkDraft(d=>({...d,lng:e.target.value})), "Longitude (optional)")}
+                </div>
+                <button type="button" disabled={geocoding} onClick={()=>handleGeocode(parkDraft.name, setParkDraft)}
+                  style={{ width:"100%", background:T.panel2, border:`1px solid ${T.border2}`, color: geocoding ? T.textFaint : T.textMid, borderRadius:T.r3, padding:"9px 0", cursor: geocoding ? "default" : "pointer", fontSize:T.fbase, fontFamily:"inherit" }}>
+                  {geocoding ? "Looking up…" : "📍 Find coordinates by name"}
+                </button>
+                {geocodeMsg && <div style={{ fontSize:T.fxs, color: geocodeMsg.startsWith("Found") ? "#4ade80" : "#fb923c", marginTop:4 }}>{geocodeMsg}</div>}
+              </div>
               {parkError && <div style={{ fontSize:T.fxs, color:"#f87171", marginBottom:8 }}>{parkError}</div>}
               <div style={{ display:"flex", gap:8 }}>
                 <button type="submit" style={{ flex:1, background:"#1e3a1e", border:"1px solid #4ade8044", color:"#4ade80", borderRadius:T.r3, padding:"10px 0", cursor:"pointer", fontSize:T.fbase, fontWeight:T.wBold, fontFamily:"inherit" }}>Save</button>
@@ -3123,11 +3153,16 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
               {/* Map coordinates (optional) — used by the Map view */}
               <label style={{ display:"flex", flexDirection:"column", gap:3, marginBottom:12 }}>
                 <span style={fieldLabelCss}>Map Coordinates (optional)</span>
-                <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
                   <input type="number" step="0.0001" value={parkDraft.lat} onChange={e=>setParkDraft(d=>({...d,lat:e.target.value}))} placeholder="Latitude" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"6px 8px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", width:110 }}/>
                   <input type="number" step="0.0001" value={parkDraft.lng} onChange={e=>setParkDraft(d=>({...d,lng:e.target.value}))} placeholder="Longitude" style={{ background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"6px 8px", color:T.ink, fontSize:T.fbase, fontFamily:"inherit", outline:"none", width:110 }}/>
-                  <span style={{ fontSize:T.fxs, color:T.textFaint }}>blank = use built-in location if known</span>
+                  <button type="button" disabled={geocoding} onClick={()=>handleGeocode(parkDraft.name, setParkDraft)}
+                    style={{ background:T.panel2, border:`1px solid ${T.border2}`, color: geocoding ? T.textFaint : T.textMid, borderRadius:T.r2, padding:"6px 9px", cursor: geocoding ? "default" : "pointer", fontSize:T.fsm, fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                    {geocoding ? "Looking up…" : "📍 Find by name"}
+                  </button>
                 </div>
+                {geocodeMsg && <div style={{ fontSize:T.fxs, color: geocodeMsg.startsWith("Found") ? "#4ade80" : "#fb923c", marginTop:2 }}>{geocodeMsg}</div>}
+                <span style={{ fontSize:T.fxs, color:T.textFaint }}>Blank = use built-in location if known. Lookup via OpenStreetMap/Nominatim — verify the result before saving.</span>
               </label>
 
               {parkError && <div style={{ fontSize:11, color:"#f87171", marginBottom:8 }}>{parkError}</div>}
