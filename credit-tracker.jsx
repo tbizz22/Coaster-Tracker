@@ -279,6 +279,17 @@ const KNOWN_MANUFACTURERS = [
   "E&F Miler Industries", "Miler", "Wisdom Rides", "Wisdom", "Reverchon",
   "Pinfari", "Mondial", "Larson International", "Larson", "Setpoint",
 ].sort((a, b) => b.length - a.length); // longest first so "B&M" doesn't pre-empt "Bolliger & Mabillard"
+
+// Canonical dropdown options — one entry per manufacturer, preferring the
+// common industry abbreviation (matches KNOWN_MANUFACTURERS above so hand
+// picks stay in the same vocabulary the RCDB-import splitter recognizes).
+const MANUFACTURER_OPTIONS = [
+  "B&M", "Intamin", "Vekoma", "Arrow Dynamics", "Premier Rides", "S&S Worldwide",
+  "Mack Rides", "GCI", "PTC", "Gerstlauer", "Zamperla", "Chance Rides",
+  "CCI", "Schwarzkopf", "Zierer", "Maurer Söhne", "The Gravity Group",
+  "Dinn Corporation", "RMC", "E&F Miler Industries", "Wisdom Rides",
+  "Reverchon", "Pinfari", "Mondial", "Larson International", "Setpoint",
+];
 function splitManufacturerModel(typeStr) {
   const s = String(typeStr || "").trim();
   if (!s) return { manufacturer: "", model: "" };
@@ -790,10 +801,14 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState(() => modalDraftFrom(coaster));
   const [err, setErr]         = useState("");
+  const [mfrOther, setMfrOther] = useState(() => !!coaster.manufacturer && !MANUFACTURER_OPTIONS.includes(coaster.manufacturer));
   const panelRef = useRef(null);
 
   // Re-seed the draft if the underlying coaster identity changes (e.g. reopened).
-  useEffect(() => { setDraft(modalDraftFrom(coaster)); setEditing(false); setErr(""); }, [coaster.name, park.id]);
+  useEffect(() => {
+    setDraft(modalDraftFrom(coaster)); setEditing(false); setErr("");
+    setMfrOther(!!coaster.manufacturer && !MANUFACTURER_OPTIONS.includes(coaster.manufacturer));
+  }, [coaster.name, park.id]);
 
   // Esc closes; lock background scroll while open; focus the panel for a11y.
   useEffect(() => {
@@ -865,8 +880,20 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
             </Field>
             <div style={{ display:"flex", gap:T.s4 }}>
               <Field label="Manufacturer">
-                <input value={draft.manufacturer} onChange={e=>st("manufacturer", e.target.value)} placeholder="e.g. B&M"
-                  style={{ width:"100%", boxSizing:"border-box", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none" }}/>
+                {mfrOther ? (
+                  <input value={draft.manufacturer} onChange={e=>st("manufacturer", e.target.value)} placeholder="e.g. Custom Coasters Inc." autoFocus
+                    style={{ width:"100%", boxSizing:"border-box", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none" }}/>
+                ) : (
+                  <select value={draft.manufacturer} onChange={e=>{
+                      if (e.target.value === "__other__") { setMfrOther(true); st("manufacturer", ""); }
+                      else st("manufacturer", e.target.value);
+                    }}
+                    style={{ width:"100%", boxSizing:"border-box", background:T.panel2, border:`1px solid ${T.border2}`, borderRadius:T.r2, padding:"7px 9px", color:T.ink, fontSize:T.fmd, fontFamily:"inherit", outline:"none" }}>
+                    <option value="">—</option>
+                    {MANUFACTURER_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                    <option value="__other__">Other…</option>
+                  </select>
+                )}
               </Field>
               <Field label="Model">
                 <input value={draft.model} onChange={e=>st("model", e.target.value)} placeholder="e.g. Inverted"
@@ -946,11 +973,25 @@ function CoasterModal({ park, coaster, canEdit = true, onSave, onClose }) {
 // (via the list or a map marker). The detail defaults to a neutral Overview;
 // an inline rider lens switches the table into per-rider height eligibility.
 // ═══════════════════════════════════════════════════════════════════════════
-function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAll, onClearAll, onOpenCoaster }) {
+function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAll, onClearAll, onOpenCoaster, onAddPark }) {
   const [selectedId,  setSelectedId]  = useState(null);   // null = show the Map; a park id = show its detail
   const [lensRiderId, setLensRiderId] = useState(null);   // null = Overview (neutral reference)
   const [hoverId,     setHoverId]     = useState(null);   // map marker hover
+  const [addingPark,  setAddingPark]  = useState(false);
+  const [addForm,     setAddForm]     = useState({ name:"", tag:"", region: Object.keys(REGIONS)[0] || "NE", family:"" });
+  const [addError,    setAddError]    = useState("");
   const sort = useCoasterSort();
+
+  function handleAddPark(e) {
+    e.preventDefault();
+    if (!addForm.name.trim()) { setAddError("Name is required."); return; }
+    if (!addForm.tag.trim())  { setAddError("Airport code is required."); return; }
+    const park = { id: uid(), name: addForm.name.trim(), tag: addForm.tag.trim().toUpperCase(), region: addForm.region, badge: "", family: addForm.family || undefined, coasters: [] };
+    onAddPark(park);
+    setAddForm({ name:"", tag:"", region: Object.keys(REGIONS)[0] || "NE", family:"" });
+    setAddError(""); setAddingPark(false);
+    setSelectedId(park.id);
+  }
 
   const park       = visibleParks.find(p => p.id === selectedId) || null;   // null → Map view
   const lensRider  = riders.find(r => r.id === lensRiderId) || null;        // null → overview
@@ -973,9 +1014,33 @@ function ParksTab({ visibleParks, allParks, riders, ridden, onToggle, onSelectAl
   // ── Left panel: park list grouped by region ──────────────────────────────
   const leftPanel = (
     <div className="ct-sidenav" style={{ width:260, flexShrink:0, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-      <div style={{ background:T.panel2, borderBottom:`1px solid ${T.border}`, padding:`${T.s3}px ${T.s5}px`, flexShrink:0 }}>
+      <div style={{ background:T.panel2, borderBottom:`1px solid ${T.border}`, padding:`${T.s3}px ${T.s5}px`, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"space-between", gap:T.s2 }}>
         <span style={{ ...labelCss, fontSize:T.fsm, color:T.textFaint, letterSpacing:"0.08em" }}>Parks</span>
+        {onAddPark && (
+          <button onClick={() => { setAddingPark(a => !a); setAddError(""); }} title="Add park" style={{
+            background: addingPark ? T.border : "transparent", border:`1px solid ${addingPark ? T.border2 : T.border}`,
+            color: addingPark ? T.textLo : T.accent, borderRadius:T.r2, padding:"2px 7px", cursor:"pointer",
+            fontSize:T.fxs, fontWeight:T.wBold, fontFamily:"inherit", lineHeight:1.6,
+          }}>{addingPark ? "✕" : "＋"}</button>
+        )}
       </div>
+      {addingPark && (
+        <form onSubmit={handleAddPark} style={{ background:T.panel, borderBottom:`1px solid ${T.border}`, padding:T.s4, display:"flex", flexDirection:"column", gap:T.s3, flexShrink:0 }}>
+          {addError && <div style={{ fontSize:T.fxs, color:"#f87171" }}>{addError}</div>}
+          <input value={addForm.name} onChange={e => setAddForm(f=>({...f, name:e.target.value}))} placeholder="Park name" style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 8px", color:T.ink, fontSize:T.fsm, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }}/>
+          <div style={{ display:"flex", gap:T.s2 }}>
+            <input value={addForm.tag} onChange={e => setAddForm(f=>({...f, tag:e.target.value}))} placeholder="Code" maxLength={4} style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 8px", color:T.ink, fontSize:T.fsm, fontFamily:"inherit", width:"100%", boxSizing:"border-box", textTransform:"uppercase" }}/>
+            <select value={addForm.region} onChange={e => setAddForm(f=>({...f, region:e.target.value}))} style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 8px", color:T.ink, fontSize:T.fsm, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }}>
+              {Object.entries(REGIONS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <select value={addForm.family} onChange={e => setAddForm(f=>({...f, family:e.target.value}))} style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:T.r2, padding:"6px 8px", color:T.ink, fontSize:T.fsm, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }}>
+            <option value="">— Independent —</option>
+            {Object.entries(PARK_FAMILIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <button type="submit" style={{ background:T.accent, border:"none", borderRadius:T.r2, padding:"6px 0", color:"#0f172a", fontWeight:T.wBold, fontSize:T.fsm, fontFamily:"inherit", cursor:"pointer" }}>Add park</button>
+        </form>
+      )}
       <div style={{ overflowY:"auto", flex:1, padding:"8px 6px" }}>
         {/* Map / all-parks entry */}
         <button onClick={() => setSelectedId(null)} style={{
@@ -3759,10 +3824,6 @@ export default function App() {
   const [view,         setView]         = useState("parks");
   const [ridersOpen,   setRidersOpen]   = useState(false); // mobile-only rider pills popover
   const [isMobile,     setIsMobile]     = useState(() => window.innerWidth < 640);
-  // Defaults to "riders" rather than "parks": Parks & Coasters editing now
-  // mostly happens inline from Plan mode, and its sub-nav button is hidden
-  // on mobile (see .ct-settings-parks-tab), so landing there by default
-  // would show orphaned content with no active tab highlighted.
   const [settingsTab,  setSettingsTab]  = useState(null);          // null = mobile menu; section id = content shown
   const [region, setRegion] = useState("ALL");
   const [riders, setRiders] = useState(null);
@@ -4060,9 +4121,6 @@ export default function App() {
     { id:"settings", Icon:IcoSettings, label:"Settings", region:false },
   ];
 
-  // "Parks & Coasters" is global-list browsing — on mobile that's redundant
-  // with the inline "✎ Edit park" entry point now in Plan mode, so it's
-  // hidden there (desktop keeps it; see .ct-settings-parks-tab in index.html).
   const SETTINGS_SUB = [
     { id:"general", label:"General",          desc:"Run scrapers, enrichers, and bulk data operations" },
     { id:"parks",   label:"Parks & Coasters", desc:"Add, edit, and enrich parks and coasters"          },
@@ -4163,7 +4221,7 @@ export default function App() {
         {view==="log" && <LogMode parks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden} onOpenCoaster={openCoaster}/>}
 
         {/* Parks tab — unified left nav with Explorer / Height sub-views */}
-        {view==="parks" && <ParksTab visibleParks={visibleParks} allParks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden} onSelectAll={selectAll} onClearAll={clearAll} onOpenCoaster={openCoaster}/>}
+        {view==="parks" && <ParksTab visibleParks={visibleParks} allParks={parks} riders={riders} ridden={ridden} onToggle={toggleRidden} onSelectAll={selectAll} onClearAll={clearAll} onOpenCoaster={openCoaster} onAddPark={addPark}/>}
 
         {/* Credits tab */}
         {view==="credits" && (isMobile

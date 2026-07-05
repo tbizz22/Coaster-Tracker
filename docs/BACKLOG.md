@@ -177,26 +177,6 @@ All items from the original IA §8 review are done — see Done archive: "Coaste
 detail modal", "Coaster import = delta merge", "Top-bar rider pills deep-link",
 "By-rider visited-parks-scoped totals", "Park `family` field". Nothing open here.
 
-## Mobile & desktop view fixes
-
-- **Fix desktop views — enforce responsive boundaries.** Several views (Parks, Credits) are intentionally desktop-only but there is no hard enforcement that prevents desktop layout patterns from leaking into mobile viewports. Audit every view at ≤640px and ≥821px: desktop views (Parks, Credits) must not be reachable or render broken UI on mobile; mobile-specific layouts (Plan mode park cards, bottom tab bar) must not appear on desktop. Each view should render only the layout appropriate for its target breakpoint.
-
-- **Settings — mobile Parks & Coasters tab is inaccessible.** The "Parks & Coasters" sub-tab in Settings is hidden on mobile (`ct-settings-parks-tab` / `display:none !important` below 640px), but there is no mobile-friendly replacement path to reach that content. Need a mobile-accessible entry point — likely a sheet/drawer or a dedicated flow reachable from Plan mode — so park and coaster management is not a dead end on phone.
-
-- **Settings sub-nav — vertical tab selectors broken on mobile.** The horizontal sub-tab strip (Riders · Regions · Backup · Account) does not work well as a vertical-tab pattern on small screens. Redesign the Settings sub-navigation for mobile: options include a stacked list/menu pattern, a `<select>`, or a sheet-style bottom drawer that lists the sections, replacing the current horizontal pill strip that clips or wraps.
-
-## Small UX polish
-
-- **Coaster Manufacturer field → dropdown, not free text.** `CoasterModal`'s edit
-  form (`credit-tracker.jsx:868`) and the Settings add/edit grid's "Type" input
-  both let manufacturer be typed freehand, so real data drifts ("B&M" vs "Bolliger
-  & Mabillard" vs typos) even though `KNOWN_MANUFACTURERS` (`credit-tracker.jsx:271`)
-  already lists the canonical set used by `splitManufacturerModel`. Swap the modal's
-  Manufacturer `<input>` for a `<select>` sourced from that same list (plus an
-  "Other" escape hatch that falls back to free text, since RCDB imports do carry
-  genuinely new/rare manufacturers not yet in the list) so hand-edits stay
-  consistent with scraped data instead of silently forking the spelling.
-
 ## Nice-to-haves
 
 - **Settings area to scrape/fill park map coordinates.** Park lat/long today lives in
@@ -209,20 +189,43 @@ detail modal", "Coaster import = delta merge", "Top-bar rider pills deep-link",
   manual lat/long override field for parks the geocoder gets wrong. Coordinates need
   to move from the static map into the `parks` table/schema so they're per-household-
   editable data instead of hardcoded.
-- **Add park from mobile.** The current "Add park" flow (Settings ▸ Parks & Coasters)
-  is hidden on mobile (`<640px`) per the Phase 4a decision. Need a mobile-friendly
-  path to create a new park — likely a sheet/drawer triggered from the Plan/Log tab
-  bar or a "+" affordance in the parks list, with a minimal form (name, region, family)
-  and optional RCDB lookup. Coaster seeding via RCDB import should work from mobile too.
-- **Add park from the desktop main view.** On desktop, creating a new park still
-  requires navigating to Settings ▸ Parks & Coasters (`ManageParks`'s "＋ Add park"
-  button, `credit-tracker.jsx:3540`) — there's no shortcut from Plan/Log/Parks/Credits.
-  Add a quick-access "+ Add park" affordance to the desktop main views (e.g. the Parks
-  left-nav list, or a top-bar action) that opens the same add-park form inline/in a
-  modal, so creating a park doesn't require leaving the current view.
 ---
 
 ## Done (this build) — for reference
+
+**Mobile/desktop view-boundary audit — confirmed already done.** Re-checked all
+three items from the old "Mobile & desktop view fixes" section against current
+code: (1) `isMobile` (`window.innerWidth<640`) + a bidirectional `useEffect`
+(`credit-tracker.jsx:~3788`) snaps `view` back to Plan/Log on mobile and to
+Parks on desktop, and `NAV`'s `desktopOnly`/`mobileOnly` flags structurally
+exclude Parks/Credits from the mobile tab bar (not just CSS-hidden) — Credits
+is deliberately still reachable on mobile via a dedicated `MobileRiderCredits`
+component, not the desktop `CreditTracker`. (2) The mobile Settings menu lists
+"Parks & Coasters" identically to every other sub-tab — no hidden dead end;
+the `ct-settings-parks-tab` class the old backlog note referenced no longer
+exists anywhere in the code. (3) Settings sub-nav on mobile is already a
+purpose-built stacked drill-down list with a back button, not the old
+horizontal pill strip. Removed the stale comments referencing the no-longer-
+real `ct-settings-parks-tab` mechanism.
+
+**Coaster Manufacturer field → dropdown.** `CoasterModal`'s edit form
+Manufacturer field (`credit-tracker.jsx`) is now a `<select>` sourced from a
+new `MANUFACTURER_OPTIONS` list (one canonical abbreviation per manufacturer,
+kept in sync with `KNOWN_MANUFACTURERS`), with an "Other…" option that swaps
+in a free-text input for manufacturers not yet in the list (RCDB imports do
+carry genuinely new/rare ones). The Settings add/edit grid's combined "Type"
+field was left as free text — it's one string covering manufacturer+model
+together, not a clean fit for a single-manufacturer dropdown.
+
+**Add park from the desktop main view.** The Parks tab's left nav (`ParksTab`)
+now has a "＋" button next to the "Parks" header that opens an inline add-park
+form (name, airport code, region, chain/family) — same shape as `PlanMode`'s
+existing add-park form — and selects the new park on save. Previously this
+required navigating to Settings ▸ Parks & Coasters.
+
+**Add park from mobile — confirmed already done.** `PlanMode` (the mobile
+Plan/Log view) already had this exact inline add-park form (name/code/region/
+family) wired to `parkEditProps.onAddPark`; the backlog note was stale.
 
 **Web platform: Phases 0–4a (Supabase migration, auth/RLS, production deploy,
 mobile redesign) — verified live.**
