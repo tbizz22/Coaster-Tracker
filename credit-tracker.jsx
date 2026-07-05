@@ -202,15 +202,22 @@ async function saveRiders(riders) {
   await supabase.from("riders").delete().eq("household_id", HOUSEHOLD_ID).not("id", "in", `(${keepIds.map(id => `"${id}"`).join(",") || "''"})`);
 }
 
+// supabase-js resolves with { data, error } instead of throwing — silently
+// swallowing an error here reads as "the save worked" (state already updated
+// optimistically) even when nothing persisted. Log so a failed save is visible.
+function logIfError(label, { error }) {
+  if (error) console.error(`[saveParks] ${label} failed:`, error);
+}
+
 async function saveParks(parks) {
   const parkRows = parks.map((p, i) => ({
     id: p.id, household_id: HOUSEHOLD_ID, name: p.name, tag: p.tag ?? null,
     region_code: p.region ?? null, badges: p.badges ?? [], family: p.family ?? null,
     official_url: p.officialUrl ?? null, lat: p.lat ?? null, lng: p.lng ?? null, sort: i,
   }));
-  if (parkRows.length) await supabase.from("parks").upsert(parkRows);
+  if (parkRows.length) logIfError("parks upsert", await supabase.from("parks").upsert(parkRows));
   const keepParkIds = parks.map(p => p.id);
-  await supabase.from("parks").delete().eq("household_id", HOUSEHOLD_ID).not("id", "in", `(${keepParkIds.map(id => `"${id}"`).join(",") || "''"})`);
+  logIfError("parks delete", await supabase.from("parks").delete().eq("household_id", HOUSEHOLD_ID).not("id", "in", `(${keepParkIds.map(id => `"${id}"`).join(",") || "''"})`));
 
   const coasterRows = [];
   for (const p of parks) {
@@ -225,10 +232,10 @@ async function saveParks(parks) {
       });
     });
   }
-  if (coasterRows.length) await supabase.from("coasters").upsert(coasterRows);
+  if (coasterRows.length) logIfError("coasters upsert", await supabase.from("coasters").upsert(coasterRows));
   for (const p of parks) {
     const keepCoasterIds = (p.coasters || []).map(c => c.id);
-    await supabase.from("coasters").delete().eq("park_id", p.id).not("id", "in", `(${keepCoasterIds.map(id => `"${id}"`).join(",") || "''"})`);
+    logIfError("coasters delete", await supabase.from("coasters").delete().eq("park_id", p.id).not("id", "in", `(${keepCoasterIds.map(id => `"${id}"`).join(",") || "''"})`));
   }
 }
 
@@ -2857,13 +2864,16 @@ function ManageParks({ parks, onAddPark, onUpdatePark, onDeletePark, onAddCoaste
   function handleApplyScrape() {
     const changed = (scrapeResult?.matched || []).filter(m => m.changed);
     if (!changed.length) { setScrapeResult(null); return; }
-    // Apply each change to min + minAccompanied via an edit-through-add at the same index.
-    changed.forEach(m => {
-      const c = selectedPark.coasters[m.coasterIdx];
-      if (!c) return;
-      onDeleteCoaster(selectedPark.id, m.coasterIdx);
-      onAddCoaster(selectedPark.id, { ...c, min: m.scraped.min, minAccompanied: m.scraped.minAccompanied }, m.coasterIdx);
+    // Apply all changes in one park update — a single save. Looping per-coaster
+    // through onDeleteCoaster/onAddCoaster used to fire one full-table save per
+    // item; with 200+ changes that's hundreds of concurrent unawaited upserts
+    // racing each other, and whichever happens to resolve last wins, silently
+    // discarding most of the batch.
+    const coasters = selectedPark.coasters.map((c, i) => {
+      const m = changed.find(m => m.coasterIdx === i);
+      return m ? { ...c, min: m.scraped.min, minAccompanied: m.scraped.minAccompanied } : c;
     });
+    onUpdatePark({ ...selectedPark, coasters });
     setScrapeResult(null);
   }
 

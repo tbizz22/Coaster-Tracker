@@ -41,7 +41,10 @@ export async function scrapeParkHeights(officialUrl, { timeoutMs = 60000, isCanc
     const page = await browser.newPage({ userAgent: UA });
 
     let captured = null;
+    let lastResponseStatus = null;
+    const seenPosts = []; // every POST URL seen, for diagnosing a failed capture
     page.on("request", (r) => {
+      if (r.method() === "POST") seenPosts.push(r.url());
       if (!captured && r.url().includes("algolia.net") && r.method() === "POST") {
         captured = { url: r.url(), postData: r.postData() };
       }
@@ -52,7 +55,9 @@ export async function scrapeParkHeights(officialUrl, { timeoutMs = 60000, isCanc
     // ~300ms instead of however long navigation has left to time out.
     let cancelPoll;
     const loadCancelled = await Promise.race([
-      page.goto(officialUrl, { waitUntil: "networkidle", timeout: timeoutMs }).then(() => false).catch(() => false),
+      page.goto(officialUrl, { waitUntil: "networkidle", timeout: timeoutMs })
+        .then(resp => { lastResponseStatus = resp?.status() ?? null; return false; })
+        .catch(() => false),
       new Promise(resolve => { cancelPoll = setInterval(() => { if (isCancelled()) resolve(true); }, 300); }),
     ]);
     clearInterval(cancelPoll);
@@ -65,7 +70,22 @@ export async function scrapeParkHeights(officialUrl, { timeoutMs = 60000, isCanc
     }
     if (isCancelled()) throw new ScrapeCancelledError();
 
-    if (!captured) throw new Error("Could not capture the park's attraction search request (page layout may have changed).");
+    if (!captured) {
+      // Diagnose *why* before failing: was this a bot-protection/challenge page
+      // (common cause when scraping from a datacenter IP) rather than an actual
+      // layout change? Log status/title/body-snippet plus every POST seen, so a
+      // failure in production can be told apart from a real per-site regression
+      // without needing to reproduce it by hand.
+      let title = null, bodySnippet = null;
+      const status = lastResponseStatus;
+      try { title = await page.title(); } catch { /* noop */ }
+      try { bodySnippet = (await page.content()).replace(/\s+/g, " ").slice(0, 300); } catch { /* noop */ }
+      console.log(
+        `[scrape-heights] capture failed for ${officialUrl} — status=${status} title=${JSON.stringify(title)} ` +
+        `posts_seen=${JSON.stringify(seenPosts)} body_snippet=${JSON.stringify(bodySnippet)}`
+      );
+      throw new Error("Could not capture the park's attraction search request (page layout may have changed).");
+    }
 
     // Replay the captured query with a large page size to fetch all coasters.
     const hits = await page.evaluate(async ({ url, postData }) => {
