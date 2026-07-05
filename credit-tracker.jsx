@@ -2102,6 +2102,10 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
   // heights: { results, found, notFound, total, error }
   const [enrichResults,    setEnrichResults]    = useState(null);
   const [enrichFields,     setEnrichFields]     = useState({ stats: true, images: false, heights: true, heightsMissingOnly: false });
+  // Tracked separately from enrichRunning (which also covers the stats/images job)
+  // because only the heights job is stoppable — it's the one driving the scraper.
+  const [heightsActive,    setHeightsActive]    = useState(false);
+  const [stopping,         setStopping]         = useState(false);
 
   const nullCount       = parks.reduce((s, p) => s + p.coasters.filter(c => c.min == null).length, 0);
   const incompleteStats = parks.reduce((s, p) => s + p.coasters.filter(c => !c.defunct && (c.speedMph == null || c.heightFt == null || c.yearOpened == null || !c.manufacturer)).length, 0);
@@ -2120,6 +2124,7 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
         if (m.type === "result") { heights.results.push(m); heights.found = m.found; heights.notFound = m.notFound; }
       }
       setEnrichRunning(status.active);
+      setHeightsActive(status.active);
       setEnrichResults(prev => ({ speeds: prev?.speeds ?? null, heights, finished: !status.active }));
     };
     (async () => {
@@ -2158,13 +2163,20 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
     }
 
     if (wantHeights) {
+      setHeightsActive(true);
       postSSE("/api/fill-heights", { parks, missingOnly: enrichFields.heightsMissingOnly }, msg => {
         if (msg.type === "start")       setEnrichResults(prev => ({ ...prev, heights: { results: [], found: 0, notFound: 0, total: msg.total } }));
         else if (msg.type === "result") setEnrichResults(prev => ({ ...prev, heights: { results: [...(prev?.heights?.results||[]), msg], found: msg.found, notFound: msg.notFound, total: msg.total } }));
-        else if (msg.type === "done")   { setEnrichResults(prev => ({ ...prev, heights: { results: msg.results, found: msg.found, notFound: msg.notFound, total: msg.total } })); markDone(); }
-        else if (msg.type === "error")  { setEnrichResults(prev => ({ ...prev, heights: { ...(prev?.heights||{}), error: msg.message } })); markDone(); }
+        else if (msg.type === "done")   { setEnrichResults(prev => ({ ...prev, heights: { results: msg.results, found: msg.found, notFound: msg.notFound, total: msg.total, cancelled: msg.cancelled } })); setHeightsActive(false); setStopping(false); markDone(); }
+        else if (msg.type === "error")  { setEnrichResults(prev => ({ ...prev, heights: { ...(prev?.heights||{}), error: msg.message } })); setHeightsActive(false); setStopping(false); markDone(); }
       });
     }
+  }
+
+  async function handleStopHeights() {
+    setStopping(true);
+    try { await fetchWithColdStartRetry(API_BASE + "/api/fill-heights/cancel", { method: "POST" }); }
+    catch {} // the next "done" message (already in flight or from the resume poll) reflects the stop either way
   }
 
   function handleApplyEnrich() {
@@ -2242,7 +2254,16 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
               </label>
             )}
           </div>
-          {actionBtn(handleEnrich, enrichRunning || enrichIncomplete === 0 || nothingSelected, enrichProgress)}
+          <div style={{ display:"flex", alignItems:"center", gap:T.s2 }}>
+            {heightsActive && (
+              <button onClick={handleStopHeights} disabled={stopping} style={{
+                background:"transparent", border:`1px solid ${T.border2}`, color: stopping ? T.textFaint : "#f87171",
+                borderRadius:T.r3, padding:"8px 14px", cursor: stopping ? "default" : "pointer",
+                fontSize:T.fbase, fontWeight:T.wBold, fontFamily:"inherit", whiteSpace:"nowrap",
+              }}>{stopping ? "Stopping…" : "Stop heights"}</button>
+            )}
+            {actionBtn(handleEnrich, enrichRunning || enrichIncomplete === 0 || nothingSelected, enrichProgress)}
+          </div>
         </div>
 
         {enrichResults && (() => {
@@ -2280,6 +2301,7 @@ function GeneralSettings({ parks, onApplyHeights, onApplySpeeds }) {
                   <div style={{ fontSize:T.fsm, color:T.textLo, marginBottom:T.s2 }}>
                     Heights — <strong style={{color:"#4ade80"}}>{enrichResults.heights.found}</strong> update{enrichResults.heights.found!==1?"s":""} found of {enrichResults.heights.total} checked
                     {enrichResults.heights.notFound > 0 && <span style={{color:"#f87171"}}> · {enrichResults.heights.notFound} not found</span>}
+                    {enrichResults.heights.cancelled && <span style={{color:ACC_AMBER}}> · stopped early</span>}
                   </div>
                 )}
                 {heightsFound.length > 0 && (
