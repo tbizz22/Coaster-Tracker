@@ -106,9 +106,8 @@ function CoasterRide() {
   );
 }
 
-// Login backdrop: halftone + glow from the Coaster Attack design system, with
-// a proper coaster layout (CoasterRide) and a physics-driven train, plus
-// floating comic-burst accents. Purely decorative behind the auth card.
+// Login backdrop: halftone, glow and floating comic-burst accents from the
+// Coaster Attack design system. The ride itself lives in LoginRide.
 function LoginBackground() {
   return (
     <div style={{ position: "fixed", inset: 0, background: "#0E1016", overflow: "hidden" }}>
@@ -125,36 +124,7 @@ function LoginBackground() {
       </svg>
 
       {/* radial glow center */}
-      <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 70% 60% at 50% 50%,rgba(42,48,66,.95) 0%,transparent 70%)" }} />
-
-      {/* track + car */}
-      <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
-        <defs>
-          <filter id="ct-glow"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-          <filter id="ct-carGlow"><feGaussianBlur stdDeviation="5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-        </defs>
-
-        {/* speed lines */}
-        <g stroke="rgba(255,255,255,.06)" strokeWidth="1.5" strokeLinecap="round">
-          <line x1="720" y1="450" x2="0" y2="200" /><line x1="720" y1="450" x2="0" y2="450" />
-          <line x1="720" y1="450" x2="0" y2="680" /><line x1="720" y1="450" x2="300" y2="0" />
-          <line x1="720" y1="450" x2="720" y2="0" /><line x1="720" y1="450" x2="1140" y2="0" />
-          <line x1="720" y1="450" x2="1440" y2="200" /><line x1="720" y1="450" x2="1440" y2="450" />
-          <line x1="720" y1="450" x2="1440" y2="680" /><line x1="720" y1="450" x2="300" y2="900" />
-          <line x1="720" y1="450" x2="720" y2="900" /><line x1="720" y1="450" x2="1140" y2="900" />
-        </g>
-
-        <CoasterRide />
-
-        {/* floating accent bursts */}
-        <g opacity=".22">
-          <polygon points="100,180 106,200 128,200 110,214 116,236 100,222 84,236 90,214 72,200 94,200" fill="#E8362E" />
-          <polygon points="1340,140 1344,154 1360,154 1347,163 1351,177 1340,168 1329,177 1333,163 1320,154 1336,154" fill="#FFC629" />
-          <polygon points="60,400 64,416 82,416 68,426 72,442 60,432 48,442 52,426 38,416 56,416" fill="#2FA8FF" />
-          <polygon points="1380,520 1383,532 1397,532 1386,540 1389,553 1380,545 1371,553 1374,540 1363,532 1377,532" fill="#FFC629" />
-        </g>
-
-      </svg>
+      <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 60% 60% at 35% 55%,rgba(42,48,66,.9) 0%,transparent 70%)" }} />
 
       {/* scattered comic pop stars */}
       <div style={{ position: "absolute", top: "7%", left: "8%", animation: "ct-floatA 6s ease-in-out infinite" }}>
@@ -180,6 +150,45 @@ function LoginBackground() {
     </div>
   );
 }
+
+// The ride itself, sized to its own box: fills the left side next to the
+// sign-in panel on desktop, and becomes a full-width band above it on phones.
+// The track runs past the right edge of the viewBox, so the train rolls
+// "into the station" behind the panel.
+function LoginRide() {
+  return (
+    <svg viewBox="0 120 1440 780" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+      <defs>
+        <filter id="ct-glow"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+      </defs>
+      {/* floating accent bursts */}
+      <g opacity=".22">
+        <polygon points="100,180 106,200 128,200 110,214 116,236 100,222 84,236 90,214 72,200 94,200" fill="#E8362E" />
+        <polygon points="1340,140 1344,154 1360,154 1347,163 1351,177 1340,168 1329,177 1333,163 1320,154 1336,154" fill="#FFC629" />
+        <polygon points="60,400 64,416 82,416 68,426 72,442 60,432 48,442 52,426 38,416 56,416" fill="#2FA8FF" />
+        <polygon points="1380,520 1383,532 1397,532 1386,540 1389,553 1380,545 1371,553 1374,540 1363,532 1377,532" fill="#FFC629" />
+      </g>
+      <CoasterRide />
+    </svg>
+  );
+}
+
+const LOGIN_CSS = `
+  .ct-login { position: relative; z-index: 1; display: flex; min-height: 100vh; }
+  .ct-login-ride { flex: 1; min-width: 0; display: flex; align-items: flex-end; }
+  .ct-login-ride svg { display: block; width: 100%; height: 100%; }
+  .ct-login-panel { box-sizing: border-box; width: 440px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 40px 48px;
+    background: rgba(17,20,28,.94); border-left: 1px solid rgba(255,255,255,.08); box-shadow: -24px 0 64px rgba(0,0,0,.45); backdrop-filter: blur(18px); }
+  .ct-login-form { width: 100%; max-width: 340px; }
+  .ct-login-badge { display: block; width: 148px; height: 148px; }
+  @media (max-width: 860px) {
+    .ct-login { flex-direction: column; }
+    .ct-login-ride { flex: none; width: 100%; aspect-ratio: 1440 / 780; }
+    .ct-login-panel { flex: 1; width: auto; align-items: flex-start; padding: 0 20px 40px; border-left: none;
+      border-top: 1px solid rgba(255,255,255,.08); box-shadow: 0 -16px 40px rgba(0,0,0,.4); }
+    .ct-login-badge { width: 112px; height: 112px; margin-top: 24px; }
+  }
+`;
 
 function AuthForm() {
   const [mode, setMode] = useState("signin"); // "signin" | "signup"
@@ -217,12 +226,15 @@ function AuthForm() {
     <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden" }}>
       <LoginBackground />
 
-      <div style={{ position: "relative", zIndex: 1, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-        <div style={{ width: "100%", maxWidth: 380, background: "rgba(20,23,31,.92)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 20, padding: "36px 32px 32px", backdropFilter: "blur(18px)", boxShadow: "0 0 0 1px rgba(232,54,46,.2), 0 24px 64px rgba(0,0,0,.6)" }}>
+      <style>{LOGIN_CSS}</style>
+      <div className="ct-login">
+        <div className="ct-login-ride"><LoginRide /></div>
+        <main className="ct-login-panel">
+        <div className="ct-login-form">
 
           {/* logo lockup */}
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 28 }}>
-            <img src="/brand/logo/badge.svg" alt="Coaster Attack — Every Credit Counts" width={148} height={148} style={{ display: "block" }} />
+            <img className="ct-login-badge" src="/brand/logo/badge.svg" alt="Coaster Attack — Every Credit Counts" width={148} height={148} />
             <div style={{ font: "500 11px/1.3 Inter, sans-serif", color: "#6d7385", letterSpacing: ".5px" }}>Credit Tracker</div>
           </div>
 
@@ -265,6 +277,7 @@ function AuthForm() {
           </p>
 
         </div>
+        </main>
       </div>
     </div>
   );
