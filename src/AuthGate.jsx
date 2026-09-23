@@ -206,20 +206,9 @@ function AuthForm() {
         <div style={{ width: "100%", maxWidth: 380, background: "rgba(20,23,31,.92)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 20, padding: "36px 32px 32px", backdropFilter: "blur(18px)", boxShadow: "0 0 0 1px rgba(232,54,46,.2), 0 24px 64px rgba(0,0,0,.6)" }}>
 
           {/* logo lockup */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28 }}>
-            <svg width="46" height="46" viewBox="0 0 100 100">
-              <defs><linearGradient id="ct-cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F6534B" /><stop offset="1" stopColor="#D92B23" /></linearGradient></defs>
-              <rect width="100" height="100" rx="24" fill="url(#ct-cg)" />
-              <rect x="1" y="1" width="98" height="98" rx="23" fill="none" stroke="rgba(255,255,255,.22)" strokeWidth="1.5" />
-              <path d="M18 71 C 18 22, 46 18, 50 49 C 54 80, 82 74, 82 26" fill="none" stroke="#FFC629" strokeWidth="9" strokeLinecap="round" />
-              <circle cx="50" cy="49" r="9" fill="#0e1016" stroke="#FFC629" strokeWidth="4" />
-            </svg>
-            <div>
-              <div style={{ fontFamily: "'Bangers', cursive", fontSize: 26, letterSpacing: 1.5, color: "#fff", lineHeight: 1 }}>
-                COASTER <span style={{ color: "#FFC629" }}>ATTACK</span>
-              </div>
-              <div style={{ font: "500 11px/1.3 Inter, sans-serif", color: "#6d7385", letterSpacing: ".5px", marginTop: 2 }}>Credit Tracker</div>
-            </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 28 }}>
+            <img src="/brand/logo/badge.svg" alt="Coaster Attack — Every Credit Counts" width={148} height={148} style={{ display: "block" }} />
+            <div style={{ font: "500 11px/1.3 Inter, sans-serif", color: "#6d7385", letterSpacing: ".5px" }}>Credit Tracker</div>
           </div>
 
           <h1 style={{ font: "700 20px/1.2 Inter, sans-serif", color: "#fff", marginBottom: 6 }}>

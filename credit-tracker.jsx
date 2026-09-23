@@ -30,7 +30,7 @@ const _Ico = ({size=16, children}) => (
 );
 const IcoPlan     = ({size}) => <_Ico size={size}><path d="M16 28 C 16 28 25 19 25 13 A 9 9 0 1 0 7 13 C 7 19 16 28 16 28 Z"/><circle cx="16" cy="13" r="3.2"/></_Ico>;
 const IcoLog      = ({size}) => <_Ico size={size}><path d="M6 9 h9 M6 16 h9 M6 23 h9"/><path d="M20 9 l2.5 2.5 L27 7 M20 16 l2.5 2.5 L27 14 M20 23 l2.5 2.5 L27 21"/></_Ico>;
-const IcoParks    = ({size}) => <_Ico size={size}><path d="M3 21 C 7 9, 12 9, 15 17 C 18 25, 25 25, 29 11"/><path d="M3 26 L29 26"/><path d="M11 19 L11 26 M22 21 L22 26"/></_Ico>;
+const IcoParks    = ({size}) => <_Ico size={size}><path d="M3 26 L11 8 Q13 4.5 15 8 Q19 18 29 26"/><path d="M3 29 L29 29"/><path d="M6.4 21.5 L4.6 20.7 M8.4 17 L6.6 16.2 M10.4 12.5 L8.6 11.7" strokeWidth="1.6"/></_Ico>;
 const IcoCredits  = ({size}) => <_Ico size={size}><polygon points="16,4 19.6,11.5 27.5,12.5 21.7,18 23.2,26 16,22 8.8,26 10.3,18 4.5,12.5 12.4,11.5"/></_Ico>;
 const IcoSettings = ({size}) => <_Ico size={size}><circle cx="16" cy="16" r="5.5"/><path d="M16 3v3M16 26v3M3 16h3M26 16h3M7.2 7.2l2.1 2.1M22.7 22.7l2.1 2.1M24.8 7.2l-2.1 2.1M9.3 22.7l-2.1 2.1"/></_Ico>;
 // Uppercase micro-label used for section headers / column heads.
@@ -2267,7 +2267,7 @@ function ManageManufacturers({ customManufacturers, onUpdate }) {
 function EmptyRiders() {
   return (
     <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:T.s3 }}>
-      <div style={{ fontSize:32 }}>🎢</div>
+      <img src="/icons/mark-yellow.svg" alt="" width={48} height={48} style={{ display:"block" }}/>
       <div style={{ fontSize:T.fmd, color:T.textFaint }}>No riders yet — add one in <strong style={{color:T.textMid}}>Riders</strong></div>
     </div>
   );
@@ -3894,8 +3894,8 @@ function PlanMode({ parks, riders, parkEditProps }) {
                 <div style={{ display:"flex", gap:T.s4, padding:T.s4 }}>
                   {/* Thumbnail — real image if available, styled placeholder otherwise */}
                   <RowThumb url={c.imageUrl} size={56} radius={T.r3} placeholder={
-                    <div style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, background:`linear-gradient(135deg, ${matColor}33, ${matColor}11)`, border:`1px solid ${matColor}44`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>
-                      🎢
+                    <div style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, background:`linear-gradient(135deg, ${matColor}33, ${matColor}11)`, border:`1px solid ${matColor}44`, display:"flex", alignItems:"center", justifyContent:"center", color:matColor }}>
+                      <IcoParks size={26}/>
                     </div>
                   }/>
                   {/* Info */}
@@ -4081,8 +4081,8 @@ function LogMode({ parks, riders, ridden, onToggle, onOpenCoaster }) {
                 >
                   {/* Thumbnail — real image if available, styled placeholder otherwise */}
                   <RowThumb url={c.imageUrl} size={56} radius={T.r3} placeholder={
-                    <div style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, background:`linear-gradient(135deg, ${matColor}33, ${matColor}11)`, border:`1px solid ${matColor}44`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>
-                      🎢
+                    <div style={{ width:56, height:56, flexShrink:0, borderRadius:T.r3, background:`linear-gradient(135deg, ${matColor}33, ${matColor}11)`, border:`1px solid ${matColor}44`, display:"flex", alignItems:"center", justifyContent:"center", color:matColor }}>
+                      <IcoParks size={26}/>
                     </div>
                   }/>
                   {/* Info */}
@@ -4450,7 +4450,7 @@ export default function App() {
   if (!ready || !riders || !parks || !ridden) {
     return (
       <div style={{ minHeight:"100vh", background:T.bg, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:T.s4, color:T.textFaint, fontFamily:"'DM Sans','Segoe UI',sans-serif" }}>
-        <div style={{ fontSize:32 }}>🎢</div>
+        <img src="/brand/logo/badge.svg" alt="Coaster Attack" width={120} height={120} style={{ display:"block" }}/>
         <div style={{ fontSize:T.fmd }}>Loading data…</div>
       </div>
     );
@@ -4495,9 +4495,10 @@ export default function App() {
           <div style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap", minWidth:0 }}>
             <button onClick={() => setView(isMobile ? "plan" : "parks")} title="Home" style={{
               background:"none", border:"none", padding:0, cursor:"pointer", fontFamily:"inherit",
-              fontSize:T.fxl, fontWeight:T.wHeavy, letterSpacing:"0.01em", flexShrink:0, lineHeight:1,
+              display:"inline-flex", alignItems:"center", gap:T.s3, flexShrink:0, lineHeight:0,
             }}>
-              <span style={{ color:T.ink }}>COASTER </span><span style={{ color:"#FFC629" }}>ATTACK</span>
+              <img src="/icons/mark-yellow.svg" alt="" width={34} height={34} style={{ display:"block" }}/>
+              <img src="/brand/logo/wordmark.svg" alt="Coaster Attack" height={26} style={{ display:"block", height:26, width:"auto" }}/>
             </button>
             <span className="ct-topbar-meta" style={{ fontSize:T.fxs, color:T.textFaint, flexShrink:0 }}>{parks.length} parks · {totalCoasters} credits</span>
             <div className="ct-rider-pills" style={{ display:"flex", alignItems:"center", gap:T.s4, flexWrap:"wrap" }}>
