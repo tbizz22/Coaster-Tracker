@@ -4483,7 +4483,7 @@ export default function App() {
   const showRegion = !!NAV.find(n => n.id === view)?.region && !(isMobile && view === "credits");
 
   return (
-    <div style={{ minHeight:"100vh", background:T.bg, color:T.text, fontFamily:"'DM Sans','Segoe UI',sans-serif", display:"flex", flexDirection:"column" }}>
+    <div className="ct-app-bg" style={{ minHeight:"100vh", background:T.bg, color:T.text, fontFamily:"'DM Sans','Segoe UI',sans-serif", display:"flex", flexDirection:"column" }}>
 
       {/* TOP BAR — full on desktop; trimmed down on mobile (nav moves to a
           bottom tab bar below, see .ct-nav-top/.ct-nav-bottom in index.html).

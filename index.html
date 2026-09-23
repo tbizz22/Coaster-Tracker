@@ -23,6 +23,21 @@
       }
       body { background: #0E1016; }
 
+      /* Brand v2 desktop backdrop: faint yellow halftone + soft red/blue
+         glows, fixed behind the app (same language as the login screen).
+         Desktop only; phones keep the flat ink background. */
+      @media (min-width: 641px) {
+        .ct-app-bg {
+          background-color: #0E1016 !important;
+          background-image:
+            radial-gradient(ellipse 60% 50% at 0% 0%, rgba(232,54,46,.20), transparent 70%),
+            radial-gradient(ellipse 55% 45% at 100% 100%, rgba(47,168,255,.14), transparent 70%),
+            radial-gradient(rgba(255,198,41,.10) 1.6px, transparent 1.8px) !important;
+          background-size: 100% 100%, 100% 100%, 18px 18px !important;
+          background-attachment: fixed !important;
+        }
+      }
+
       /* ── Responsive shell ──────────────────────────────────────────────
          A page is a horizontal split (side nav + content). Below the
          breakpoint it stacks: the nav becomes a full-width, height-capped,
