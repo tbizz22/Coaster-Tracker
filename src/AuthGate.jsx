@@ -58,7 +58,10 @@ function CoasterRide() {
       return;
     }
 
-    let s = 0, raf, last = performance.now();
+    // Start already on the visible part of the lift hill (not back in the
+    // off-screen station) so the train is moving on screen right away.
+    place(sCrest * 0.35);
+    let s = sCrest * 0.35, raf, last = performance.now();
     const tick = now => {
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
       const sc = s - gap, i = Math.max(0, Math.min(N, Math.floor(sc)));
@@ -180,15 +183,44 @@ const LOGIN_CSS = `
   .ct-login-panel { box-sizing: border-box; width: 440px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 40px 48px;
     background: rgba(17,20,28,.94); border-left: 1px solid rgba(255,255,255,.08); box-shadow: -24px 0 64px rgba(0,0,0,.45); backdrop-filter: blur(18px); }
   .ct-login-form { width: 100%; max-width: 340px; }
-  .ct-login-badge { display: block; width: 148px; height: 148px; }
+  .ct-login-badge { display: block; width: 380px; height: 380px; max-width: 100%; }
   @media (max-width: 860px) {
     .ct-login { flex-direction: column; }
     .ct-login-ride { flex: none; width: 100%; aspect-ratio: 1440 / 780; }
     .ct-login-panel { flex: 1; width: auto; align-items: flex-start; padding: 0 20px 40px; border-left: none;
       border-top: 1px solid rgba(255,255,255,.08); box-shadow: 0 -16px 40px rgba(0,0,0,.4); }
-    .ct-login-badge { width: 112px; height: 112px; margin-top: 24px; }
+    .ct-login-badge { width: 260px; height: 260px; margin-top: 24px; }
   }
 `;
+
+// Shared chrome for the login screen: animated backdrop + ride + side panel.
+// Mounted as soon as AuthGate renders (even while the session check is still
+// in flight) so the coaster starts moving immediately on page load, instead
+// of waiting on that network round-trip.
+function LoginShell({ children }) {
+  return (
+    <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden" }}>
+      <LoginBackground />
+
+      <style>{LOGIN_CSS}</style>
+      <div className="ct-login">
+        <div className="ct-login-ride"><LoginRide /></div>
+        <main className="ct-login-panel">
+        <div className="ct-login-form">
+
+          {/* logo lockup */}
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
+            <img className="ct-login-badge" src="/brand/logo/badge.svg" alt="Coaster Attack — Every Credit Counts" width={380} height={380} />
+          </div>
+
+          {children}
+
+        </div>
+        </main>
+      </div>
+    </div>
+  );
+}
 
 function AuthForm() {
   const [mode, setMode] = useState("signin"); // "signin" | "signup"
@@ -223,63 +255,47 @@ function AuthForm() {
   }
 
   return (
-    <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden" }}>
-      <LoginBackground />
+    <LoginShell>
+      <h1 style={{ font: "700 20px/1.2 Inter, sans-serif", color: "#fff", marginBottom: 6 }}>
+        {mode === "signin" ? "Welcome back" : "Create your household"}
+      </h1>
+      <p style={{ font: "400 13px/1.5 Inter, sans-serif", color: "#6d7385", marginBottom: 24 }}>
+        {mode === "signin" ? "Sign in to track your coaster credits." : "Set up an account to start tracking credits together."}
+      </p>
 
-      <style>{LOGIN_CSS}</style>
-      <div className="ct-login">
-        <div className="ct-login-ride"><LoginRide /></div>
-        <main className="ct-login-panel">
-        <div className="ct-login-form">
-
-          {/* logo lockup */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 28 }}>
-            <img className="ct-login-badge" src="/brand/logo/badge.svg" alt="Coaster Attack — Every Credit Counts" width={148} height={148} />
-            <div style={{ font: "500 11px/1.3 Inter, sans-serif", color: "#6d7385", letterSpacing: ".5px" }}>Credit Tracker</div>
-          </div>
-
-          <h1 style={{ font: "700 20px/1.2 Inter, sans-serif", color: "#fff", marginBottom: 6 }}>
-            {mode === "signin" ? "Sign in" : "Create household"}
-          </h1>
-          <p style={{ font: "400 13px/1.5 Inter, sans-serif", color: "#6d7385", marginBottom: 24 }}>Track your coaster credits</p>
-
-          <form onSubmit={submit}>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ display: "block", font: "600 12px/1 Inter, sans-serif", color: "#9298a8", letterSpacing: ".4px", marginBottom: 7 }}>Email</label>
-              <input style={input} type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
-            </div>
-
-            <div style={{ marginBottom: 22 }}>
-              <label style={{ display: "block", font: "600 12px/1 Inter, sans-serif", color: "#9298a8", letterSpacing: ".4px", marginBottom: 7 }}>Password</label>
-              <input style={input} type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
-            </div>
-
-            {error && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 14, fontFamily: "Inter, sans-serif" }}>{error}</div>}
-            {notice && <div style={{ color: "#4ade80", fontSize: 13, marginBottom: 14, fontFamily: "Inter, sans-serif" }}>{notice}</div>}
-
-            <button style={button} type="submit" disabled={busy}>
-              {busy ? "Working…" : mode === "signin" ? "Sign in" : "Create household"}
-            </button>
-          </form>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0" }}>
-            <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.08)" }} />
-            <span style={{ font: "400 11px/1 Inter, sans-serif", color: "#454b5c" }}>or</span>
-            <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.08)" }} />
-          </div>
-
-          <p style={{ textAlign: "center", font: "400 13px/1.5 Inter, sans-serif", color: "#6d7385" }}>
-            {mode === "signin" ? (
-              <>New here? <button type="button" style={linkBtn} onClick={() => setMode("signup")}>Create a household account</button></>
-            ) : (
-              <>Already have an account? <button type="button" style={linkBtn} onClick={() => setMode("signin")}>Sign in</button></>
-            )}
-          </p>
-
+      <form onSubmit={submit}>
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: "block", font: "600 12px/1 Inter, sans-serif", color: "#9298a8", letterSpacing: ".4px", marginBottom: 7 }}>Email</label>
+          <input style={input} type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
         </div>
-        </main>
+
+        <div style={{ marginBottom: 22 }}>
+          <label style={{ display: "block", font: "600 12px/1 Inter, sans-serif", color: "#9298a8", letterSpacing: ".4px", marginBottom: 7 }}>Password</label>
+          <input style={input} type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+        </div>
+
+        {error && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 14, fontFamily: "Inter, sans-serif" }}>{error}</div>}
+        {notice && <div style={{ color: "#4ade80", fontSize: 13, marginBottom: 14, fontFamily: "Inter, sans-serif" }}>{notice}</div>}
+
+        <button style={button} type="submit" disabled={busy}>
+          {busy ? "Working…" : mode === "signin" ? "Sign in" : "Create household"}
+        </button>
+      </form>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0" }}>
+        <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.08)" }} />
+        <span style={{ font: "400 11px/1 Inter, sans-serif", color: "#454b5c" }}>or</span>
+        <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.08)" }} />
       </div>
-    </div>
+
+      <p style={{ textAlign: "center", font: "400 13px/1.5 Inter, sans-serif", color: "#6d7385" }}>
+        {mode === "signin" ? (
+          <>New here? <button type="button" style={linkBtn} onClick={() => setMode("signup")}>Create a household account</button></>
+        ) : (
+          <>Already have an account? <button type="button" style={linkBtn} onClick={() => setMode("signin")}>Sign in</button></>
+        )}
+      </p>
+    </LoginShell>
   );
 }
 
@@ -310,9 +326,12 @@ export default function AuthGate({ children }) {
       });
   }, [session]);
 
-  if (session === undefined) return null; // initial load
+  // The shell (backdrop + animated coaster) mounts immediately below, before
+  // the session check resolves, so the ride starts moving right away instead
+  // of waiting on that network round-trip.
+  if (session === undefined) return <LoginShell />; // initial load
   if (session === null) return <AuthForm />;
-  if (!householdReady) return null; // resolving household_id
+  if (!householdReady) return <LoginShell />; // resolving household_id
 
   return children;
 }
