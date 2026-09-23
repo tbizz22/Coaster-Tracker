@@ -1,0 +1,32 @@
+{
+  "name": "Coaster Attack",
+  "short_name": "Coaster Attack",
+  "description": "Roller coaster park planning & credit tracking",
+  "theme_color": "#E8362E",
+  "background_color": "#0E1016",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "icons/png/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/png/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/png/app-icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/png/app-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
